@@ -1,0 +1,10 @@
+[1mdiff --git a/.gitignore b/.gitignore[m
+[1mindex 83972fa..1f5ea41 100644[m
+[1m--- a/.gitignore[m
+[1m+++ b/.gitignore[m
+[36m@@ -216,3 +216,4 @@[m [m__marimo__/[m
+ [m
+ # Streamlit[m
+ .streamlit/secrets.toml[m
+[32m+[m[32mdata/raw/[m
+\ No newline at end of file[m
