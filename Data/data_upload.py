@@ -3,8 +3,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import requests
 
-url_1 = "https://www.efsa.europa.eu/en/data-report/food-consumption-data"
-data_alimentation = pd.read_csv(url_1)
+url_1 = "http://www.efsa.europa.eu/sites/default/files/chronicgdayconsumers.xlsx"
+data_alimentation = pd.read_excel(url_1)
 data_alimentation.head(5)
 
 #url_2 = #faut se login pour télécharger les données ESS, on l'avait fait pour R l'année dernière mais 
