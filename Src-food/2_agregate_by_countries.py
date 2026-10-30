@@ -16,8 +16,8 @@ Utilisation depuis la racine du projet (après le script de nettoyage) :
 """
  
 RACINE = Path(__file__).resolve().parents[1]
-CHEMIN_PROPRE = RACINE / "data" / "processed" / "issp_clean.csv"
-CHEMIN_PAYS = RACINE / "data" / "processed" / "issp_par_pays.csv"
+CHEMIN_PROPRE = RACINE / "Data" / "processed" / "issp_clean.csv"
+CHEMIN_PAYS = RACINE / "Data" / "processed" / "issp_par_pays.csv"
  
  
 def moyenne_ponderee(groupe: pd.DataFrame, var: str = "jours_viande_rouge",
