@@ -22,8 +22,8 @@ Utilisation depuis la racine du projet :
 """
 
 RACINE = Path(__file__).resolve().parents[1]
-CHEMIN_BRUT = RACINE / "data" / "raw" / "ISSP_2020.dta"
-CHEMIN_PROPRE = RACINE / "data" / "processed" / "issp_clean.csv"
+CHEMIN_BRUT = RACINE / "Data" / "raw" / "ISSP_2020.dta"
+CHEMIN_PROPRE = RACINE / "Data" / "processed" / "issp_clean.csv"
  
 COLONNES_ISSP = ["country", "c_alphan", "SEX", "v50", "WEIGHT"]
 CODE_VEGETARIEN = -4
