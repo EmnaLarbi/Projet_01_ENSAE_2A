@@ -1,15 +1,17 @@
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
-####################
-# Nettoyage de l'ESS
-####################
+# Chemins de base globaux
+RACINE = Path(__file__).resolve().parents[1] if "__file__" in locals() else Path.cwd()
+DOSSIER_PROCESSED = RACINE / "Data" / "processed"
 
-# 1. Charger la base intégrée ESS11
-df_ess = pd.read_csv('Data/raw/ESS11e04_2.csv')
+# ==========================================
+# 1. TRAITEMENT DE L'ESS 11
+# ==========================================
 
-# 2. Liste des variables sélectionnées
-variables_ess = [
+CHEMIN_BRUT_ESS = RACINE / "Data" / "raw" / "ESS11e04_2.csv"
+VARIABLES_ESS = [
     'cntry',
     'bctprd',
     'pslplonl',
@@ -25,81 +27,204 @@ variables_ess = [
     'impenva',
 ]
 
-colonnes_presentes = [col for col in variables_ess if col in df_ess.columns]
-df_ess_subset = df_ess[colonnes_presentes].copy()
-
-# Compter le nombre de lignes initiales avant nettoyage
-lignes_initiales = len(df_ess_subset)
-
-# 3. Dictionnaire des codes de non-réponse / refus / valeurs à éliminer par variable
-codes_speciaux = {
-    'bctprd': [7, 8, 9],  # Refus, Don't know, No answer
-    'pslplonl': [7, 8, 9],  # Refus, Don't know, No answer
-    'alcfreq': [77, 88, 99],  # Refus, Don't know, No answer
-    'mascfel': [7, 8, 9],  # Refus, Don't know, No answer
-    'impbemw': [66, 77, 88, 99],  # Not applicable, Refus, Don't know, No answer
-    'polintr': [7, 8, 9],  # Refus, Don't know, No answer
-    'wrclmch': [6, 7, 8, 9],  # Not applicable, Refus, Don't know, No answer
-    'ccrdprs': [66, 77, 88, 99],  # Not applicable, Refus, Don't know, No answer
-    'nwspol': [7777, 8888, 9999],  # Refus, Don't know, No answer
-    'netustm': [7, 8, 9],  # Refus, Don't know, No answer
-    'impenva': [66, 77, 88, 99],  # Not applicable, Refus, Don't know, No answer
+CODES_SPECIAUX_ESS = {
+    'bctprd': [7, 8, 9],
+    'pslplonl': [7, 8, 9],
+    'alcfreq': [77, 88, 99],
+    'mascfel': [7, 8, 9],
+    'impbemw': [66, 77, 88, 99],
+    'polintr': [7, 8, 9],
+    'wrclmch': [6, 7, 8, 9],
+    'ccrdprs': [66, 77, 88, 99],
+    'nwspol': [7777, 8888, 9999],
+    'netustm': [7, 8, 9],
+    'impenva': [66, 77, 88, 99],
 }
 
-# Remplacer ces codes spécifiques par NaN pour qu'ils soient traités comme des valeurs manquantes
-for col, codes in codes_speciaux.items():
-  if col in df_ess_subset.columns:
-    df_ess_subset[col] = df_ess_subset[col].replace(codes, np.nan)
 
-# On isole ccnthum pour créer une variable binaire "Climato-sceptique" avant de nettoyer le reste
-if 'ccnthum' in df_ess.columns:
-  # 1 si la personne pense que ça n'arrive pas (55), 0 sinon (mais on garde les NaN pour les vrais refus)
-  df_ess['climatosceptique'] = np.where(df_ess['ccnthum'] == 55, 1, 0)
-  df_ess.loc[df_ess['ccnthum'].isin([77, 88, 99]), 'climatosceptique'] = np.nan
+def charger_ess(chemin: str | Path = CHEMIN_BRUT_ESS) -> pd.DataFrame:
+  """Charge la base brute ESS11."""
+  return pd.read_csv(chemin)
 
-# Pour ccnthum classique, si on veut garder l'échelle de 1 à 5 en excluant le 55 des moyennes continues :
-# On transforme 55 en NaN pour ne pas fausser la moyenne sur les causes humaines/naturelles
-df_ess['ccnthum'] = df_ess['ccnthum'].replace(55, np.nan)
 
-# 4. Éliminer toutes les lignes contenant des NaN sur ces colonnes
-df_ess_propre = df_ess_subset.dropna()
-print(df_ess_propre.head(10))
+def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+  """Nettoie l'ESS, gère les codes spéciaux, crée les variables et agrège par pays."""
+  colonnes_presentes = [col for col in VARIABLES_ESS if col in df.columns]
+  df_subset = df[colonnes_presentes].copy()
+  lignes_initiales = len(df_subset)
 
-# Calculer et afficher le nombre de lignes éliminées
-lignes_eliminees = lignes_initiales - len(df_ess_propre)
-print(f'Nombre de lignes éliminées suite au nettoyage : {lignes_eliminees}')
-print(f"Nombre de lignes restantes pour l'analyse : {len(df_ess_propre)}")
+  # Remplacement des codes spécifiques par NaN
+  for col, codes in CODES_SPECIAUX_ESS.items():
+    if col in df_subset.columns:
+      df_subset[col] = df_subset[col].replace(codes, np.nan)
+
+  # Gestion spécifique de ccnthum (climatosceptique)
+  if 'ccnthum' in df.columns:
+    df_subset['climatosceptique'] = np.where(df['ccnthum'] == 55, 1, 0)
+    df_subset.loc[df['ccnthum'].isin([77, 88, 99]), 'climatosceptique'] = np.nan
+    df_subset['ccnthum'] = df_subset['ccnthum'].replace(55, np.nan)
+
+  # Suppression des lignes comportant des NaN
+  df_propre = df_subset.dropna()
+  lignes_eliminees = lignes_initiales - len(df_propre)
+  print(f'Nombre de lignes éliminées (ESS) : {lignes_eliminees}')
+  print(f"Nombre de lignes restantes (ESS) : {len(df_propre)}")
+
+  # Vérification des types avant agrégation
+  colonnes_non_numeriques = df_propre.select_dtypes(
+      include=['object']
+  ).columns.tolist()
+  colonnes_non_numeriques = [
+      col for col in colonnes_non_numeriques if col != 'cntry'
+  ]
+  if colonnes_non_numeriques:
+    print(f'⚠️ ALERTE ESS : Colonnes non numériques : {colonnes_non_numeriques}')
+  else:
+    print('✅ TEST RÉUSSI ESS : Toutes les variables à agréger sont numériques.')
+
+  # Agrégation par pays
+  df_agrege = df_propre.groupby('cntry').mean(numeric_only=True).reset_index()
+  df_agrege = df_agrege.rename(columns={'cntry': 'code_pays'})
+
+  return df_propre, df_agrege
+
+
+def executer_ess():
+  if not CHEMIN_BRUT_ESS.exists():
+    print(
+        f'⚠️ Fichier ESS introuvable à l’emplacement : {CHEMIN_BRUT_ESS}. Étape'
+        ' ignorée.'
+    )
+    return
+
+  print('--- Début du traitement de l’ESS 11 ---')
+  brut = charger_ess(CHEMIN_BRUT_ESS)
+  propre, agrege = nettoyer_ess(brut)
+
+  DOSSIER_PROCESSED.mkdir(parents=True, exist_ok=True)
+  propre.to_csv(DOSSIER_PROCESSED / 'ess11_nettoye.csv', index=False)
+  agrege.to_csv(DOSSIER_PROCESSED / 'ess11_agrege_pays.csv', index=False)
+  print(f'💾 Fichiers ESS sauvegardés dans {DOSSIER_PROCESSED}/\n')
+
 
 # ==========================================
-# 🔍 TEST DE VÉRIFICATION DES TYPES AVANT AGRÉGATION
+# 2. TRAITEMENT ET AGRÉGATION DE L'ISSP 2020
 # ==========================================
-print('\n--- [TEST] Vérification des types de données ---')
-print(df_ess_propre.dtypes)
 
-# Détecter s'il reste des colonnes non numériques (hors 'cntry' qui est le code pays textuel)
-colonnes_non_numeriques = df_ess_propre.select_dtypes(
-    include=['object']
-).columns.tolist()
-# On retire 'cntry' de la liste car c'est normal qu'il soit en texte (ex: 'FR', 'DE')
-colonnes_non_numeriques = [col for col in colonnes_non_numeriques if col != 'cntry']
+CHEMIN_BRUT_ISSP = RACINE / "Data" / "raw" / "ISSP_2020.dta"
+CHEMIN_PROPRE_ISSP = DOSSIER_PROCESSED / "issp_clean.csv"
+CHEMIN_PAYS_ISSP = DOSSIER_PROCESSED / "issp_par_pays.csv"
 
-if colonnes_non_numeriques:
-  print(
-      f'⚠️ ALERTE : Les colonnes suivantes contiennent du texte/non-numérique'
-      f' : {colonnes_non_numeriques}'
+COLONNES_ISSP = ["country", "c_alphan", "SEX", "v50", "WEIGHT"]
+CODE_VEGETARIEN = -4
+CODES_SEXE = {1: "homme", 2: "femme"}
+
+
+def charger_issp(chemin: str | Path = CHEMIN_BRUT_ISSP) -> pd.DataFrame:
+  """Charge uniquement les colonnes utiles de la base ISSP."""
+  return pd.read_stata(chemin, columns=COLONNES_ISSP, convert_categoricals=False)
+
+
+def nettoyer_issp(
+    df: pd.DataFrame, vegetariens_a_zero: bool = True
+) -> pd.DataFrame:
+  """Renomme les variables, recode les non-réponses et le sexe."""
+  out = df.rename(
+      columns={
+          "c_alphan": "country_iso2",
+          "country": "country_code",
+          "v50": "jours_viande_rouge",
+          "WEIGHT": "poids",
+      }
+  ).copy()
+
+  conso = out["jours_viande_rouge"].astype(float)
+  if vegetariens_a_zero:
+    conso = conso.mask(conso == CODE_VEGETARIEN, 0)
+  out["jours_viande_rouge"] = conso.where(conso >= 0)
+
+  out["sexe"] = out["SEX"].map(CODES_SEXE)
+  out["country_iso2"] = out["country_iso2"].str.strip()
+
+  out = out.dropna(subset=["sexe", "jours_viande_rouge", "poids"])
+  return out[
+      ["country_iso2", "country_code", "sexe", "jours_viande_rouge", "poids"]
+  ]
+
+
+def moyenne_ponderee(
+    groupe: pd.DataFrame, var: str = "jours_viande_rouge", poids: str = "poids"
+) -> float:
+  """Moyenne de `var` pondérée par `poids` au sein d'un groupe."""
+  return np.average(groupe[var], weights=groupe[poids])
+
+
+def agreger_par_pays_issp(df: pd.DataFrame) -> pd.DataFrame:
+  """Agrège la base individuelle nettoyée de l'ISSP au niveau pays."""
+  moyennes = (
+      df.groupby(["country_iso2", "sexe"])[["jours_viande_rouge", "poids"]]
+      .apply(moyenne_ponderee)
+      .unstack("sexe")
+      .rename(columns={"homme": "conso_homme", "femme": "conso_femme"})
   )
-else:
-  print(
-      '✅ TEST RÉUSSI : Toutes les variables à agréger sont bien au format'
-      ' numérique (hors identifiant pays).'
+  effectifs = (
+      df.groupby(["country_iso2", "sexe"])
+      .size()
+      .unstack("sexe")
+      .rename(columns={"homme": "n_homme", "femme": "n_femme"})
   )
-print('------------------------------------------------\n')
 
-# 5. Agréger par pays pour obtenir les scores moyens par nation (Étape 2)
-df_ess_agrege = df_ess_propre.groupby('cntry').mean(numeric_only=True).reset_index()
+  pays = moyennes.join(effectifs)
+  pays.columns.name = None
+  return pays[["conso_homme", "conso_femme", "n_homme", "n_femme"]]
 
-# 6. Renommer 'cntry' en 'code_pays' pour préparer la jointure macroscopique (Étape 3)
-df_ess_agrege = df_ess_agrege.rename(columns={'cntry': 'code_pays'})
 
-# Afficher un aperçu des 10 premières lignes du résultat final agrégé
-print(df_ess_agrege.head(10))
+def ajouter_ecart_sexes_issp(pays: pd.DataFrame) -> pd.DataFrame:
+  """Ajoute la variable ecart_h_f = consommation Homme - consommation Femme."""
+  pays = pays.copy()
+  pays["ecart_h_f"] = pays["conso_homme"] - pays["conso_femme"]
+  return pays
+
+
+def executer_issp():
+  if not CHEMIN_BRUT_ISSP.exists():
+    print(
+        f"⚠️ Fichier ISSP introuvable à l’emplacement : {CHEMIN_BRUT_ISSP}."
+        " Étape ignorée."
+    )
+    return
+
+  print("--- Début du traitement et de l'agrégation de l'ISSP 2020 ---")
+  brut = charger_issp(CHEMIN_BRUT_ISSP)
+  propre = nettoyer_issp(brut)
+
+  DOSSIER_PROCESSED.mkdir(parents=True, exist_ok=True)
+  propre.to_csv(CHEMIN_PROPRE_ISSP, index=False)
+
+  # Étape d'agrégation pays pour l'ISSP
+  pays = ajouter_ecart_sexes_issp(agreger_par_pays_issp(propre))
+  pays.to_csv(CHEMIN_PAYS_ISSP)
+
+  print(f"Base brute (ISSP)    : {len(brut)} répondants")
+  print(
+      f"Base nettoyée (ISSP) : {len(propre)} répondants"
+      f" ({len(brut) - len(propre)} lignes supprimées)"
+  )
+  print(f"💾 Fichier ISSP propre sauvegardé dans {CHEMIN_PROPRE_ISSP}")
+  print(
+      f"💾 Fichier ISSP agrégé par pays sauvegardé dans {CHEMIN_PAYS_ISSP}\n"
+  )
+  print(pays.sort_values("ecart_h_f", ascending=False).round(2))
+
+
+# ==========================================
+# 🚀 POINT D'ENTRÉE GLOBAL
+# ==========================================
+def main():
+  executer_ess()
+  executer_issp()
+  print("✨ Traitement global de toutes les bases terminé avec succès !")
+
+
+if __name__ == "__main__":
+  main()
