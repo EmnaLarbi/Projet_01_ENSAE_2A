@@ -1,114 +1,43 @@
+import time, re
 import pandas as pd
 from pytrends.request import TrendReq
+from pytrends.exceptions import TooManyRequestsError
 
-########################################################
-# Trouver le nombre de recherche sur chaque mot par pays 
-########################################################
+pytrends = TrendReq(hl="en-US", tz=0, timeout=(10, 30))
 
-# 1. Initialiser pytrends (langue anglaise, fuseau horaire UTC)
-pytrends = TrendReq(hl='en-US', tz=360)
+def safe_call(fn, tries=5, wait=20):
+    """Réessaie avec attente croissante en cas de 429."""
+    for i in range(tries):
+        try:
+            return fn()
+        except TooManyRequestsError:
+            time.sleep(wait * (i + 1))
+    raise RuntimeError("Google Trends bloque : réessaie plus tard ou change d'IP")
 
-# 2. Définir tes mots-clés liés à la virilité et à la viande (à adapter ou traduire selon les pays)
-# Exemple de requêtes combinées ou séparées
-keywords = [
-    'barbecue',
-    'meat',
-    'masculinity',
-    'manliness',
-    'carnism',
-]
-# 3. Construire le payload (on peut cibler des pays spécifiques via leur code ISO, ex: 'FR', 'DE', 'US')
-# Note : Pour un comparatif mondial par pays, Google Trends permet de récupérer l'intérêt par pays (geo='').
-pytrends.build_payload(
-    keywords, cat=0, timeframe='2023-01-01 2023-12-31', geo=''
-)
+# ---- 1. Test minimal : un seul appel ----
+kws = ["meat", "masculinity", "barbecue", "beef"]
+pytrends.build_payload(kws, timeframe="2023-01-01 2023-12-31", geo="")
+df_world = safe_call(lambda: pytrends.interest_by_region(
+    resolution="COUNTRY", inc_low_vol=True))
+print(df_world.sort_values("meat", ascending=False).head(10))
+df_world.to_csv("trends_world.csv")
 
-# 4. Récupérer l'intérêt par pays (Interest by Region)
-df_trends_pays = pytrends.interest_by_region(
-    resolution='COUNTRY', inc_low_vol=True
-)
+# ---- 2. Requêtes associées avec filtre par mots entiers ----
+related = safe_call(pytrends.related_queries)
+pattern = re.compile(r"\b(?:man|men|masculin\w*|manly|manliness|woman|women|vegan)\b", re.I)
+for kw in kws:
+    top = related.get(kw, {}).get("top")
+    if top is not None:
+        print(f"\n{kw}:\n", top[top["query"].str.contains(pattern)])
 
-print(df_trends_pays.head(10))
-
-########################################################
-# Trouver les mots associées aux mots relatifs à la viande par pays 
-########################################################
-
-# 2. Définir ta liste de mots-clés (maximum 5 par requête pour l'API Google Trends)
-keywords = ['beef', 'barbecue', 'meat', 'grill']
-
-# 3. Construire le payload avec tous les mots-clés
-pytrends.build_payload(
-    keywords, cat=0, timeframe='2023-01-01 2023-12-31', geo=''
-)
-
-# 4. Récupérer toutes les requêtes associées d'un coup
-related_queries_dict = pytrends.related_queries()
-
-# 5. Parcourir les résultats pour chaque mot-clé
-for kw in keywords:
-  print(f'\n============================')
-  print(f'🔍 Top recherches associées pour : "{kw}"')
-  print(f'============================')
-
-  if (
-      related_queries_dict
-      and kw in related_queries_dict
-      and related_queries_dict[kw]['top'] is not None
-  ):
-    df_top = related_queries_dict[kw]['top']
-
-    # Afficher le Top 10 des mots associés
-    print(df_top)
-
-    # (Optionnel) Filtrer automatiquement pour voir si des mots-clés cibles ressortent
-    # Ex: chercher des termes liés au genre, aux hommes/femmes ou aux alternatives
-    mots_cibles = ['man', 'men', 'masculinity', 'women', 'manliness']
-    mas_filter = df_top['query'].str.contains(
-        '|'.join(mots_cibles), case=False, na=False
-    )
-    resultats_filtres = df_top[mas_filter]
-
-    if not resultats_filtres.empty:
-      print(
-          '   🎯 [Bingo] Termes en lien avec le genre ou les alternatives'
-          ' trouvés :'
-      )
-      print(resultats_filtres)
-    else:
-      print('   (Aucun terme direct de cette liste dans le Top 10)')
-  else:
-    print(f'Pas de données disponibles pour {kw}')
-
-
-##############################################
-# Scraping sur Google Ads 
-##############################################
-
-def main(client: GoogleAdsClient, customer_id: str) -> None:
-    ga_service: GoogleAdsServiceClient = client.get_service("GoogleAdsService")
-
-    query: str = """
-        SELECT 
-          campaign.id, 
-          campaign.name, 
-          metrics.impressions, 
-          metrics.clicks, 
-          metrics.cost_micros 
-        FROM campaign 
-        WHERE segments.date DURING LAST_30_DAYS
-        ORDER BY campaign.id
-    """
-
-    # Issues a search request using streaming.
-    stream: Iterator[SearchGoogleAdsStreamResponse] = ga_service.search_stream(
-        customer_id=customer_id, query=query
-    )
-
-    for batch in stream:
-        rows: List[GoogleAdsRow] = batch.results
-        for row in rows:
-            print(
-                f"Campaign with ID {row.campaign.id} and name "
-                f'"{row.campaign.name}" was found.'
-            )
+# ---- 3. Indice par pays (à lancer seulement une fois 1 validé) ----
+countries = ["FR", "DE", "ES", "IT", "GB", "PL", "SE"]
+rows = {}
+for geo in countries:
+    pytrends.build_payload(kws, timeframe="2023-01-01 2023-12-31", geo=geo)
+    d = safe_call(pytrends.interest_over_time)
+    rows[geo] = d.drop(columns="isPartial", errors="ignore").mean()
+    time.sleep(10)
+df_trends = pd.DataFrame(rows).T
+df_trends.to_csv("trends_by_country.csv")
+print(df_trends)
