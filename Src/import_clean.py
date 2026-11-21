@@ -10,9 +10,14 @@ DOSSIER_PROCESSED = RACINE / "Data" / "processed"
 # 1. TRAITEMENT DE L'ESS 11
 # ==========================================
 
+# 1. TRAITEMENT DE L'ESS 11
+# ==========================================
+# Les lignes ajoutées sont marquées « # AJOUT ». Tout le reste est inchangé.
+
 CHEMIN_BRUT_ESS = RACINE / "Data" / "raw" / "ESS11e04_2.csv"
 VARIABLES_ESS = [
     'cntry',
+    'gndr',  # AJOUT : sexe (1 = homme, 2 = femme)
     'bctprd',
     'pslplonl',
     'alcfreq',
@@ -28,6 +33,7 @@ VARIABLES_ESS = [
 ]
 
 CODES_SPECIAUX_ESS = {
+    'gndr': [9],  # AJOUT : 9 = sexe non renseigné
     'bctprd': [7, 8, 9],
     'pslplonl': [7, 8, 9],
     'alcfreq': [77, 88, 99],
@@ -70,12 +76,15 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
   print(f'Nombre de lignes éliminées (ESS) : {lignes_eliminees}')
   print(f"Nombre de lignes restantes (ESS) : {len(df_propre)}")
 
+  # AJOUT : libellé du sexe dans la table individuelle (ess11_nettoye.csv)
+  df_propre = df_propre.assign(sexe=df_propre['gndr'].map({1: 'homme', 2: 'femme'}))  # AJOUT
+
   # Vérification des types avant agrégation
   colonnes_non_numeriques = df_propre.select_dtypes(
       include=['object']
   ).columns.tolist()
   colonnes_non_numeriques = [
-      col for col in colonnes_non_numeriques if col != 'cntry'
+      col for col in colonnes_non_numeriques if col not in ('cntry', 'sexe')  # AJOUT : 'sexe' est un libellé
   ]
   if colonnes_non_numeriques:
     print(f'⚠️ ALERTE ESS : Colonnes non numériques : {colonnes_non_numeriques}')
@@ -84,6 +93,20 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
   # Agrégation par pays
   df_agrege = df_propre.groupby('cntry').mean(numeric_only=True).reset_index()
+  df_agrege = df_agrege.drop(columns='gndr')  # AJOUT : la moyenne de gndr n'a pas de sens
+
+  # AJOUT : mascfel moyen par sexe et effectifs, par pays
+  mascfel_sexe = (  # AJOUT
+      df_propre.groupby(['cntry', 'sexe'])['mascfel']  # AJOUT
+      .agg(['mean', 'size'])  # AJOUT
+      .unstack('sexe')  # AJOUT
+  )  # AJOUT
+  mascfel_sexe.columns = [  # AJOUT
+      f"{'mascfel' if stat == 'mean' else 'n_ess'}_{sexe}"  # AJOUT : mascfel_homme, n_ess_femme…
+      for stat, sexe in mascfel_sexe.columns  # AJOUT
+  ]  # AJOUT
+  df_agrege = df_agrege.merge(mascfel_sexe.reset_index(), on='cntry', how='left')  # AJOUT
+
   df_agrege = df_agrege.rename(columns={'cntry': 'code_pays'})
 
   return df_propre, df_agrege
@@ -105,7 +128,6 @@ def executer_ess():
   propre.to_csv(DOSSIER_PROCESSED / 'ess11_nettoye.csv', index=False)
   agrege.to_csv(DOSSIER_PROCESSED / 'ess11_agrege_pays.csv', index=False)
   print(f'💾 Fichiers ESS sauvegardés dans {DOSSIER_PROCESSED}/\n')
-
 
 # ==========================================
 # 2. TRAITEMENT ET AGRÉGATION DE L'ISSP 2020
