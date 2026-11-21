@@ -1,33 +1,9 @@
 
-"""
-src/maps.py
-===========
+
+"""Carte choroplèthe interactive de l'Europe : fréquence déclarée de consommation
+de viande rouge selon le sexe (ISSP 2020)."""
  
-Carte choroplèthe interactive de l'Europe : fréquence déclarée de consommation
-de viande rouge selon le sexe (ISSP 2020).
- 
-Projet : « Viande et masculinité : existe-t-il une corrélation entre les normes
-de genre et la consommation de viande rouge en Europe ? »
- 
-Exécution (depuis la racine du projet) :
- 
-    python src/maps.py                       # carte standard
-    python src/maps.py --geojson Data/raw/europe.geojson   # géométrie embarquée (100 % hors ligne)
-    python src/maps.py --strict              # échoue si le contrôle croisé détecte un écart
- 
-Sortie : Data/processed/carte_viande_genre.html (HTML autonome).
- 
-Principes statistiques
-----------------------
-* Toutes les moyennes sont PONDÉRÉES par la variable `poids` (jamais de moyenne simple).
-* Les indicateurs par pays sont recalculés à partir de `issp_clean.csv` (nécessaire
-  pour la vue « Tous les répondants ») puis CONTRÔLÉS contre `issp_par_pays.csv`.
-* `jours_viande_rouge` est une FRÉQUENCE déclarée : aucune conversion en kg.
-* Les intervalles de confiance affichés sont INDICATIFS (approximation de Kish,
-  ne tenant pas compte du plan de sondage complet) : aucune conclusion de
-  significativité n'est formulée par ce script.
-"""
- 
+
 from __future__ import annotations
  
 import argparse
@@ -709,5 +685,327 @@ def main(argv: list[str] | None = None) -> int:
     return 0
  
  
+if __name__ == "__main__":
+    sys.exit(main())
+
+
+
+
+
+
+"""
+
+
+Carte n°2: choroplèthe interactive de la masculinité ressentie en Europe (ESS 11).
+
+"""
+
+from __future__ import annotations
+
+import argparse
+import gettext
+import html
+import logging
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
+import pycountry
+
+# Briques réutilisées de src/maps.py (même périmètre, même gestion du fond de carte)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from maps import (  # noqa: E402
+    DATA_DIR, EUROPE_ISO2, GRIS_SANS_DONNEES, _SCRIPT_FOND_VIDE, ErreurDonnees,
+    _fmt, charger_geojson,
+)
+
+# ---------------------------------------------------------------------------
+# 0. PARAMÈTRES
+# ---------------------------------------------------------------------------
+
+TABLE_PATH = DATA_DIR / "table_jointe.csv"
+OUT_PATH = DATA_DIR / "carte_masculinite.html"
+
+SEUIL_EFFECTIF_FAIBLE = 100   # répondants ESS par sexe en dessous duquel on alerte
+
+# Vues proposées dans le menu : colonne → libellé
+VUES = {
+    "mascfel": "Masculinité ressentie — ensemble",
+    "mascfel_homme": "Masculinité ressentie — hommes",
+    "mascfel_femme": "Masculinité ressentie — femmes",
+    "ecart_mascfel": "Écart de masculinité ressentie H − F",
+}
+
+# Palette séquentielle mono-teinte (clair = faible, foncé = élevé)
+ECHELLE = [[0.0, "#eef6f3"], [0.5, "#5fa596"], [1.0, "#0b3d33"]]
+ENCRE, ENCRE_2, FOND = "#0b0b0b", "#52514e", "#fcfcfb"
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)-7s | %(message)s")
+log = logging.getLogger("carte_masculinite")
+
+
+# ---------------------------------------------------------------------------
+# 1. CHARGEMENT ET CONTRÔLES
+# ---------------------------------------------------------------------------
+
+def charger_table(chemin: Path = TABLE_PATH) -> pd.DataFrame:
+    """Lit table_jointe.csv, vérifie les colonnes et les codes pays,
+    calcule l'écart H − F et restreint au périmètre européen."""
+    if not chemin.exists():
+        raise ErreurDonnees(f"Fichier introuvable : {chemin}")
+    df = pd.read_csv(chemin)
+
+    if "iso2" not in df.columns:
+        raise ErreurDonnees("Colonne `iso2` absente de table_jointe.csv")
+    presentes = [c for c in ["mascfel", "mascfel_homme", "mascfel_femme"] if c in df.columns]
+    if not presentes:
+        raise ErreurDonnees("Aucune colonne mascfel dans table_jointe.csv")
+    if "mascfel_homme" not in df.columns:
+        log.warning("mascfel_homme / mascfel_femme absents : relancer clean.py puis la jointure")
+
+    # Codes pays : nettoyage, doublons
+    df["iso2"] = df["iso2"].astype(str).str.strip().str.upper()
+    if df["iso2"].duplicated().any():
+        raise ErreurDonnees(f"Pays en double : {df.loc[df.iso2.duplicated(), 'iso2'].tolist()}")
+
+    # Écart de masculinité ressentie entre hommes et femmes
+    if {"mascfel_homme", "mascfel_femme"} <= set(df.columns):
+        df["ecart_mascfel"] = df["mascfel_homme"] - df["mascfel_femme"]
+
+    df = ajouter_iso3_et_noms(df)
+
+    # Périmètre européen
+    hors = sorted(set(df.iso2) - EUROPE_ISO2)
+    if hors:
+        log.info("Hors périmètre européen (exclus) : %s", hors)
+    df = df[df.iso2.isin(EUROPE_ISO2)].reset_index(drop=True)
+
+    # Valeurs manquantes
+    for col in VUES:
+        if col in df.columns and df[col].isna().any():
+            log.warning("%s : pas de valeur pour %s", col, df.loc[df[col].isna(), "iso2"].tolist())
+    log.info("%d pays européens : %s", len(df), " ".join(sorted(df.iso2)))
+    return df
+
+
+def ajouter_iso3_et_noms(df: pd.DataFrame) -> pd.DataFrame:
+    """Recalcule l'ISO3 depuis l'ISO2 avec pycountry (sans faire confiance à la
+    colonne iso3 existante) et ajoute le nom du pays en français."""
+    try:
+        fr = gettext.translation("iso3166-1", pycountry.LOCALES_DIR, languages=["fr"]).gettext
+    except OSError:
+        fr = lambda s: s  # noqa: E731
+
+    iso3, noms = [], []
+    for code in df["iso2"]:
+        pays = pycountry.countries.get(alpha_2=code)
+        iso3.append(pays.alpha_3 if pays else None)
+        noms.append(fr(getattr(pays, "common_name", None) or pays.name) if pays else code)
+
+    if "iso3" in df.columns:
+        ecarts = [c for c, a, b in zip(df.iso2, df.iso3, iso3) if b and a != b]
+        if ecarts:
+            log.warning("Colonne iso3 incohérente pour %s : corrigée via pycountry", ecarts)
+    inconnus = [c for c, b in zip(df.iso2, iso3) if b is None]
+    if inconnus:
+        log.warning("Codes ISO2 inconnus (exclus) : %s", inconnus)
+
+    return df.assign(iso3=iso3, nom=noms).dropna(subset=["iso3"])
+
+
+# ---------------------------------------------------------------------------
+# 2. INFOBULLES
+# ---------------------------------------------------------------------------
+
+def texte_survol(r: pd.Series) -> str:
+    """Texte affiché au survol d'un pays."""
+    def v(col, signe=False):
+        return _fmt(r[col], signe) if col in r.index and pd.notna(r[col]) else "n.d."
+
+    lignes = [f"<b>{html.escape(r['nom'])}</b>",
+              f"Ensemble : {v('mascfel')}"]
+    if "mascfel_homme" in r.index:
+        n_h = f"  (n = {int(r['n_ess_homme'])})" if pd.notna(r.get("n_ess_homme")) else ""
+        n_f = f"  (n = {int(r['n_ess_femme'])})" if pd.notna(r.get("n_ess_femme")) else ""
+        lignes += [f"Hommes : {v('mascfel_homme')}{n_h}",
+                   f"Femmes : {v('mascfel_femme')}{n_f}",
+                   f"<b>Écart H − F : {v('ecart_mascfel', True)}</b>"]
+        n_min = min(r.get("n_ess_homme", np.inf), r.get("n_ess_femme", np.inf))
+        if n_min < SEUIL_EFFECTIF_FAIBLE:
+            lignes.append(f"<i>⚠ Effectif faible (< {SEUIL_EFFECTIF_FAIBLE} pour un sexe)</i>")
+    return "<br>".join(lignes)
+
+
+# ---------------------------------------------------------------------------
+# 3. CARTE
+# ---------------------------------------------------------------------------
+
+def construire_carte(df: pd.DataFrame, geojson: tuple[dict, str] | None = None) -> go.Figure:
+    """Une couche par vue, commutées par un menu déroulant."""
+    df = df.assign(survol=df.apply(texte_survol, axis=1))
+    vues = [(c, lib) for c, lib in VUES.items() if c in df.columns]
+
+    fig = go.Figure()
+    n_fond = 0
+    if geojson:   # fond gris des pays européens sans donnée (mode hors ligne)
+        cle = geojson[1].split(".", 1)[1]
+        tous = [f["properties"][cle] for f in geojson[0]["features"]]
+        fig.add_trace(go.Choropleth(
+            geojson=geojson[0], featureidkey=geojson[1], locationmode="geojson-id",
+            locations=tous, z=[0] * len(tous), showscale=False, hoverinfo="skip",
+            colorscale=[[0, GRIS_SANS_DONNEES], [1, GRIS_SANS_DONNEES]],
+            marker_line_color="white", marker_line_width=0.6))
+        n_fond = 1
+
+    for i, (col, lib) in enumerate(vues):
+        d = df.dropna(subset=[col])          # aucun pays sans donnée n'est coloré
+        kw = dict(
+            locations=d.iso3, z=d[col], text=d.survol,
+            hovertemplate="%{text}<extra></extra>",
+            colorscale=ECHELLE, visible=(i == 0),
+            marker_line_color="white", marker_line_width=0.6,
+            colorbar=dict(title=dict(text=lib.replace(" — ", "<br>"), font_size=11),
+                          thickness=12, len=0.6, x=0.98, tickformat=".2f", outlinewidth=0))
+        if geojson:
+            kw.update(geojson=geojson[0], featureidkey=geojson[1], locationmode="geojson-id")
+        else:
+            kw["locationmode"] = "ISO-3"
+        fig.add_trace(go.Choropleth(**kw))
+
+    menu = [dict(label=lib, method="update",
+                 args=[{"visible": [True] * n_fond + [j == i for j in range(len(vues))]}])
+            for i, (_, lib) in enumerate(vues)]
+    fig.update_layout(
+        updatemenus=[dict(buttons=menu, x=0.01, y=0.99, xanchor="left", yanchor="top",
+                          bgcolor="white", bordercolor="#c9c8c2")],
+        margin=dict(l=0, r=0, t=10, b=0), height=620, paper_bgcolor=FOND,
+        font=dict(family="Georgia, serif", color=ENCRE),
+        hoverlabel=dict(bgcolor="white", font=dict(family="Georgia, serif", size=13)))
+
+    cadrage = dict(projection_type="conic conformal", bgcolor=FOND,
+                   lataxis_range=[34, 71.5], lonaxis_range=[-25, 42])
+    if geojson:
+        fig.update_geos(visible=False, projection_parallels=[43, 62],
+                        projection_rotation_lon=12, **cadrage)
+    else:
+        fig.update_geos(scope="europe", resolution=50, showframe=False,
+                        showcoastlines=False, showcountries=True, countrycolor="white",
+                        showland=True, landcolor=GRIS_SANS_DONNEES, showocean=True,
+                        oceancolor=FOND, **cadrage)
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# 4. INDICATEURS ET PAGE HTML
+# ---------------------------------------------------------------------------
+
+def indicateurs(df: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """Tuiles affichées au-dessus de la carte : (libellé, valeur, détail)."""
+    t = [("Pays représentés", str(int(df["mascfel"].notna().sum()) if "mascfel" in df
+                                  else len(df)), "Europe, ESS 11")]
+    if "mascfel_homme" in df:
+        t += [("Hommes", _fmt(df.mascfel_homme.mean()), "moyenne des pays"),
+              ("Femmes", _fmt(df.mascfel_femme.mean()), "moyenne des pays")]
+        e = df.dropna(subset=["ecart_mascfel"])
+        if not e.empty:
+            imax, imin = e.ecart_mascfel.idxmax(), e.ecart_mascfel.idxmin()
+            t += [("Écart H − F le plus élevé", html.escape(e.at[imax, "nom"]),
+                   _fmt(e.at[imax, "ecart_mascfel"], True)),
+                  ("Écart H − F le plus faible", html.escape(e.at[imin, "nom"]),
+                   _fmt(e.at[imin, "ecart_mascfel"], True))]
+    elif "mascfel" in df:
+        t.append(("Moyenne", _fmt(df.mascfel.mean()), "moyenne des pays"))
+    return t
+
+
+def page_html(fig: go.Figure, tuiles: list[tuple[str, str, str]],
+              geometrie_embarquee: bool, plotly_cdn: bool) -> str:
+    carte = fig.to_html(full_html=False, include_plotlyjs="cdn" if plotly_cdn else True,
+                        config={"displaylogo": False, "responsive": True})
+    bloc_tuiles = "".join(
+        f'<div class="tuile"><div class="label">{l}</div><div class="valeur">{v}</div>'
+        f'<div class="detail">{d}</div></div>' for l, v, d in tuiles)
+    return f"""<!DOCTYPE html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Masculinité ressentie en Europe — ESS 11</title>
+<style>
+  body {{ margin:0; background:{FOND}; color:{ENCRE}; font-family:Georgia,'Times New Roman',serif; line-height:1.5; }}
+  main {{ max-width:1100px; margin:0 auto; padding:32px 24px 48px; }}
+  h1 {{ font-size:1.65rem; font-weight:normal; margin:0 0 4px; }}
+  h2 {{ font-size:1.1rem; font-weight:normal; border-bottom:1px solid #e4e3de; padding-bottom:4px; margin-top:28px; }}
+  .sous-titre, .note {{ color:{ENCRE_2}; }}
+  .note {{ font-size:.88rem; }}
+  .tuiles {{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:20px 0; }}
+  .tuile {{ border-top:2px solid {ENCRE}; padding:10px 2px 4px; }}
+  .label {{ font-size:.76rem; text-transform:uppercase; letter-spacing:.06em; color:{ENCRE_2}; }}
+  .valeur {{ font-size:1.45rem; margin-top:2px; }}
+  .detail {{ font-size:.85rem; color:{ENCRE_2}; }}
+  .bloc {{ border:1px solid #e4e3de; }}
+  li, p {{ font-size:.95rem; }}
+  code {{ font-size:.85em; background:#f0efec; padding:1px 4px; }}
+</style></head><body><main>
+<h1>Masculinité ressentie en Europe</h1>
+<p class="sous-titre">European Social Survey, round 11 — moyennes par pays de la question
+« À quel point vous sentez-vous masculin ? » (<code>mascfel</code>).</p>
+<div class="tuiles">{bloc_tuiles}</div>
+<div class="bloc">{_SCRIPT_FOND_VIDE if geometrie_embarquee else ""}{carte}</div>
+<p class="note">Menu en haut à gauche : choix de la vue. Chaque vue a sa propre échelle de
+couleurs (du plus clair au plus foncé). Gris : pays non couverts par l'ESS 11 ou hors périmètre.</p>
+
+<h2>Lecture</h2>
+<ul>
+<li><b>Ensemble, hommes, femmes</b> : moyenne de <code>mascfel</code> parmi les répondants concernés.</li>
+<li><b>Écart H − F</b> : différence entre la moyenne des hommes et celle des femmes. Un écart élevé
+signale des identités de genre plus différenciées dans le pays.</li>
+<li>Les échelles étant propres à chaque vue, une même couleur ne correspond pas à la même valeur
+d'une vue à l'autre : comparez les valeurs dans les infobulles.</li>
+</ul>
+<h2>Limites</h2>
+<ul>
+<li><code>mascfel</code> mesure une identité ressentie, pas l'adhésion à des normes de masculinité.</li>
+<li>Les moyennes sont reprises de <code>ess11_agrege_pays.csv</code> telles que calculées par
+<code>clean.py</code> ; vérifier leur pondération et leur traitement des non-réponses.</li>
+<li>La comparabilité de la question entre langues et contextes nationaux n'est pas garantie.</li>
+</ul>
+<p class="note">Source : ESS ERIC, European Social Survey Round 11. Généré par <code>src/carte_masculinite.py</code>.</p>
+</main></body></html>"""
+
+
+# ---------------------------------------------------------------------------
+# 5. POINT D'ENTRÉE
+# ---------------------------------------------------------------------------
+
+def generer(table: Path = TABLE_PATH, sortie: Path = OUT_PATH,
+            geojson_path: Path | None = None, plotly_cdn: bool = False) -> Path:
+    df = charger_table(table)
+    if df.empty:
+        raise ErreurDonnees("Aucun pays européen à cartographier.")
+    gj = charger_geojson(geojson_path, set(df.iso3)) if geojson_path else None
+    fig = construire_carte(df, gj)
+    sortie.parent.mkdir(parents=True, exist_ok=True)
+    sortie.write_text(page_html(fig, indicateurs(df), gj is not None, plotly_cdn), encoding="utf-8")
+    log.info("Carte écrite : %s (%.1f Mo)", sortie, sortie.stat().st_size / 1e6)
+    return sortie
+
+
+def main(argv: list[str] | None = None) -> int:
+    p = argparse.ArgumentParser(description="Carte de la masculinité ressentie (ESS 11)")
+    p.add_argument("--table", type=Path, default=TABLE_PATH)
+    p.add_argument("--sortie", type=Path, default=OUT_PATH)
+    p.add_argument("--geojson", type=Path, default=None,
+                   help="GeoJSON des pays pour une page 100 %% hors ligne")
+    p.add_argument("--cdn", action="store_true", help="plotly.js chargé depuis un CDN")
+    a = p.parse_args(argv)
+    try:
+        generer(a.table, a.sortie, a.geojson, a.cdn)
+    except ErreurDonnees as e:
+        log.error("%s", e)
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
     sys.exit(main())
