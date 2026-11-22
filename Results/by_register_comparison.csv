@@ -1,0 +1,4 @@
+﻿register,meat_bbq_n,meat_bbq_pct,control_n,control_pct,odds_ratio,ci95_low,ci95_high,haldane_anscombe_ci,p_value_fisher
+testosterone,0,0.0,4,0.09,0.0,0.018,6.211,True,0.5779808541454475
+identite_masculine,5,0.35,5,0.12,3.018,0.872,10.44,False,0.13383314258271617
+ancestral_alpha,13,0.9,12,0.28,3.283,1.494,7.211,False,0.0039753217121908
