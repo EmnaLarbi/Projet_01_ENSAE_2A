@@ -478,7 +478,7 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_inde
             page = context.new_page()
 
             for offset, (country, lang, kw) in enumerate(plan, start=1):
-                idx = start_index + offset
+                idx = start_index + offset -1
                 url = (
                     "https://www.facebook.com/ads/library/"
                     f"?active_status=all&ad_type=all&country={country}&q={urllib.parse.quote(kw)}"
@@ -545,4 +545,4 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_inde
 
 
 if __name__ == "__main__":
-    scrape_meta_ads(start_index=186)
+    scrape_meta_ads(start_index=1)

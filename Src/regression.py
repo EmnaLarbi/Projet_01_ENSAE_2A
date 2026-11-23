@@ -47,8 +47,8 @@ print(f"Table utilisée : {CHEMIN_DONNEES}")
 COLONNES = {
     "pays": "iso2",                 # colonne identifiant le pays (code iso2)
     "ecart_viande": "ecart_h_f",    # Y : écart de conso de viande h − f (déjà calculé)
-    "masc_h": "mascfel_homme_w",        # MODIF (pondération) : avant "mascfel_homme" ; score des hommes pondéré par anweight
-    "masc_f": "mascfel_femme_w",        # MODIF (pondération) : avant "mascfel_femme" ; score des femmes pondéré par anweight
+    "masc_h": "mascfel_homme_w",        # score des hommes pondéré par anweight
+    "masc_f": "mascfel_femme_w",        # score des femmes pondéré par anweight
     "pib": "pib_hab",                   # PIB par habitant, en niveau
 }
 
