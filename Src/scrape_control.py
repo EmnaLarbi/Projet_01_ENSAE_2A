@@ -39,7 +39,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 # Filtres ET méthode de collecte communs avec le groupe « viande » (même dossier Src/) :
 # les deux groupes sont extraits et lus exactement de la même façon.
-from scraping_meta import (
+from scrape import (
     ETIQUETTES_ID, JS_EXTRAIRE_CARTES, OFF_TOPIC_PATTERN, PAUSE_ENTRE_REQUETES,
     PET_PATTERNS, _ad_langs, _faire_defiler, _fermer_bandeau_cookies, detect_meats,
     parse_ad_block,

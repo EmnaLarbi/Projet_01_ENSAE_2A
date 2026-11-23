@@ -5,22 +5,11 @@ import pandas as pd
 from playwright.sync_api import sync_playwright
 
 # =============================================================================
-# SCRAPING DE LA BIBLIOTHÈQUE PUBLICITAIRE META — viande rouge et blanche.
+# SCRAPING DE LA BIBLIOTHÈQUE PUBLICITAIRE META — viande rouge.
 # Les noms et signatures des fonctions sont inchangés : la boucle de collecte
 # `scrape_meta_ads` fonctionne sans modification.
-#
-# Corrections :
-#   1. Viande ROUGE = bœuf et agneau uniquement ; viande BLANCHE = volaille, porc, veau.
-#   2. Le type de viande ne dépend plus du mot-clé de recherche, seulement du texte
-#      et de l'annonceur.
-#   3. Liste des animaux de compagnie appliquée LANGUE PAR LANGUE
-#      (« pas » = chien en croate, mais négation en français).
-#   4. Termes ambigus retirés (rôti, Braten, arrosto, asado, sült, stek, paisti,
-#      pečenje, pečenka, Hackfleisch, jauheliha, solomillo…) et mots trop courts
-#      (ave, kana, kura).
-#   5. Pertinence évaluée dans la langue de la requête (+ anglais), sans liste de
-#      secours toutes langues confondues.
-#   + Langues à déclinaisons : reconnaissance des formes fléchies (govedinom, naudanlihaa…).
+
+# Viande ROUGE = bœuf et agneau uniquement ; 
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -31,86 +20,55 @@ from playwright.sync_api import sync_playwright
 MEAT_KEYWORDS = {
     "fr": {"boeuf": ["bœuf", "boeuf", "viande bovine", "entrecôte", "côte de bœuf", "bavette", "steak haché"],
            "agneau": ["agneau", "gigot", "mouton"],
-           "volaille": ["poulet", "volaille", "dinde"],
-           "porc": ["porc", "jambon", "lardons"],
-           "veau": ["veau"]},
+           },
     "en": {"boeuf": ["beef", "steak", "sirloin", "ribeye", "brisket"],
            "agneau": ["lamb", "mutton"],
-           "volaille": ["chicken", "poultry", "turkey"],
-           "porc": ["pork", "bacon"],
-           "veau": ["veal"]},
+           },
     "de": {"boeuf": ["Rindfleisch", "Rind", "Rindersteak", "Steak"],
            "agneau": ["Lammfleisch", "Lamm"],
-           "volaille": ["Hähnchen", "Hühnchen", "Geflügel", "Pute", "Putenfleisch"],
-           "porc": ["Schweinefleisch", "Schwein", "Schinken"],
-           "veau": ["Kalbfleisch", "Kalb"]},
+           },
     "it": {"boeuf": ["manzo", "carne di manzo", "carne bovina", "bistecca", "fiorentina"],
            "agneau": ["agnello", "carne ovina"],
-           "volaille": ["pollo", "tacchino", "pollame"],
-           "porc": ["maiale", "carne suina", "prosciutto"],
-           "veau": ["vitello"]},
+           },
     "es": {"boeuf": ["carne de vacuno", "vacuno", "ternera", "buey", "chuletón"],  # « ternera » = bœuf en Espagne
            "agneau": ["cordero"],
-           "volaille": ["pollo", "pavo", "pechuga de pollo"],
-           "porc": ["cerdo", "jamón"],
-           "veau": []},
+           },
     "fi": {"boeuf": ["naudanliha", "nauta"],
            "agneau": ["lammas", "lampaanliha"],
-           "volaille": ["broileri", "kananliha", "kalkkuna"],
-           "porc": ["sianliha", "porsas", "kinkku"],
-           "veau": ["vasikanliha"]},
+           },
     "hr": {"boeuf": ["govedina", "junetina"],
            "agneau": ["janjetina", "ovčetina"],
-           "volaille": ["piletina", "puretina", "perad"],
-           "porc": ["svinjetina", "šunka"],
-           "veau": ["teletina"]},
+           },
     "hu": {"boeuf": ["marhahús", "marha"],
            "agneau": ["bárányhús", "bárány"],
-           "volaille": ["csirkehús", "csirke", "pulyka", "baromfi"],
-           "porc": ["sertéshús", "sertés", "sonka"],
-           "veau": ["borjúhús", "borjú"]},
+           },
     "is": {"boeuf": ["nautakjöt"],
            "agneau": ["lambakjöt", "lambalæri"],
-           "volaille": ["kjúklingur", "kalkúnn"],
-           "porc": ["svínakjöt", "skinka"],
-           "veau": ["kálfakjöt"]},
+           },
     "lt": {"boeuf": ["jautiena"],
            "agneau": ["ėriena", "aviena"],
-           "volaille": ["vištiena", "kalakutiena", "paukštiena"],
-           "porc": ["kiauliena", "kumpis"],
-           "veau": ["veršiena"]},
+           },
     "no": {"boeuf": ["storfekjøtt", "oksekjøtt", "biff"],
            "agneau": ["lammekjøtt", "fårikål"],
-           "volaille": ["kylling", "kalkun"],
-           "porc": ["svinekjøtt", "skinke"],
-           "veau": ["kalvekjøtt"]},
+           },
     "se": {"boeuf": ["nötkött", "oxfilé"],
            "agneau": ["lammkött", "lamm"],
-           "volaille": ["kyckling", "kalkon"],
-           "porc": ["fläskkött", "fläsk", "skinka"],
-           "veau": ["kalvkött"]},
+           },
     "si": {"boeuf": ["govedina", "goveje meso"],
            "agneau": ["jagnjetina"],
-           "volaille": ["piščanec", "piščančje meso", "puran", "perutnina"],
-           "porc": ["svinjina", "pršut"],
-           "veau": ["teletina"]},
+           },
     "sk": {"boeuf": ["hovädzie mäso", "hovädzie"],
            "agneau": ["jahňacie mäso", "jahňacie"],
-           "volaille": ["kuracie mäso", "kuracie", "morčacie mäso", "hydina"],
-           "porc": ["bravčové mäso", "bravčové"],
-           "veau": ["teľacie mäso"]},
+           },
 }
 
 # Point 1 : seuls le bœuf et l'agneau sont des viandes rouges
-MEAT_CATEGORY = {"boeuf": "red", "agneau": "red", "volaille": "white", "porc": "white", "veau": "white"}
+MEAT_CATEGORY = {"boeuf": "red", "agneau": "red"}
 
 # Rétrocompatibilité : mêmes noms qu'avant
 RED_MEAT_KEYWORDS = {l: [t for d, ts in v.items() if MEAT_CATEGORY[d] == "red" for t in ts]
                      for l, v in MEAT_KEYWORDS.items()}
-WHITE_MEAT_KEYWORDS = {l: [t for d, ts in v.items() if MEAT_CATEGORY[d] == "white" for t in ts]
-                       for l, v in MEAT_KEYWORDS.items()}
-KEYWORDS_BY_LANG = {l: sorted(set(RED_MEAT_KEYWORDS[l]) | set(WHITE_MEAT_KEYWORDS[l]))
-                    for l in MEAT_KEYWORDS}
+KEYWORDS_BY_LANG = {l: sorted(set(RED_MEAT_KEYWORDS[l])) for l in MEAT_KEYWORDS}
 
 TARGET_COUNTRIES_LANGS = {
     "AT": ["de"], "CH": ["de", "fr", "it"], "DE": ["de"], "ES": ["es"], "FI": ["fi"],
@@ -233,7 +191,7 @@ def _ad_langs(lang: str) -> list[str]:
 
 
 def detect_meats(text: str, advertiser: str = "", lang: str = "") -> list[str]:
-    """Types de viande présents (boeuf, agneau, volaille, porc, veau)."""
+    """Types de viande présents (boeuf, agneau)."""
     combined = f"{advertiser or ''} {text or ''}"
     found = {meat for l in _ad_langs(lang) for meat, rx in MEAT_PATTERNS.get(l, {}).items()
              if rx.search(combined)}
@@ -328,14 +286,10 @@ def is_valid_clean_ad(ad: dict) -> bool:
 
 def detect_meat_type(text: str, advertiser: str = "", keyword: str = "", lang: str = "") -> str:
     """Point 2 : le mot-clé de recherche est IGNORÉ (argument conservé pour compatibilité).
-    Renvoie red_meat, white_meat, both ou general_meat_bbq."""
+    Renvoie red_meat ou general_meat_bbq."""
     cats = {MEAT_CATEGORY[m] for m in detect_meats(text, advertiser, lang)}
-    if cats == {"red", "white"}:
-        return "both"
     if cats == {"red"}:
         return "red_meat"
-    if cats == {"white"}:
-        return "white_meat"
     return "general_meat_bbq"
 
 
@@ -363,7 +317,7 @@ def save_clean_output(clean_ads: list[dict], clean_file: Path):
         lambda r: detect_meat_type(r.get("ad_text", ""), r.get("advertiser", ""), lang=r.get("lang", "")),
         axis=1,
     )
-    df_clean["meat_detail"] = df_clean.apply(   # bœuf, agneau, volaille, porc, veau
+    df_clean["meat_detail"] = df_clean.apply(   # bœuf, agneau
         lambda r: ",".join(detect_meats(r.get("ad_text", ""), r.get("advertiser", ""), r.get("lang", ""))),
         axis=1,
     )

@@ -48,11 +48,10 @@ import numpy as np
 import pandas as pd
 from scipy.stats import chi2_contingency, fisher_exact
 
-# Mêmes règles que la collecte (fichier scraping_meta.py dans Src/)
-from scraping_meta import WHITE_MEAT_KEYWORDS, detect_meats, is_valid_clean_ad
+# Mêmes règles que la collecte
+from scrape import  detect_meats, is_valid_clean_ad
 
 RED_MEATS = {"boeuf", "agneau"}
-WHITE_MEATS = {"volaille", "porc", "veau"}
 
 # -----------------------------------------------------------------------------
 # 0. CHEMINS ET PARAMÈTRES
@@ -182,7 +181,6 @@ def load_clean_ads(path: Path) -> pd.DataFrame:
             df[col] = ""
         df[col] = df[col].astype(str).str.strip()
     df["ad_text"] = df["ad_text"].map(clean_meta_footer)          # correction 5
-    df["mixte"] = False
     return df
 
 
@@ -190,29 +188,13 @@ def select_red_meat(df: pd.DataFrame) -> pd.DataFrame:
     """Garde les publicités valides qui mentionnent du bœuf ou de l'agneau."""
     valid = df.apply(lambda r: is_valid_clean_ad(r.to_dict()), axis=1)
     meats = [set(detect_meats(t, a, l)) for t, a, l in zip(df["ad_text"], df["advertiser"], df["lang"])]
-    df = df.assign(
-        meat_detail=[",".join(sorted(m)) for m in meats],
-        mixte=[bool(m & RED_MEATS) and bool(m & WHITE_MEATS) for m in meats],
-    )
+    df = df.assign(meat_detail=[",".join(sorted(m)) for m in meats])
     red = pd.Series([bool(m & RED_MEATS) for m in meats], index=df.index)
-    white = pd.Series([bool(m & WHITE_MEATS) for m in meats], index=df.index)
 
     print("=== SÉLECTION DU CORPUS VIANDE ROUGE (lignes du CSV) ===")
-    print(f"Total : {len(df)} | invalides selon les règles actuelles : {int((~valid).sum())}")
-    print(f"Valides — rouge seule : {int((valid & red & ~white).sum())} | mixtes rouge + blanche : "
-          f"{int((valid & red & white).sum())} | blanche seule (écartées) : {int((valid & ~red & white).sum())} | "
-          f"bbq/grill sans viande (écartées) : {int((valid & ~red & ~white).sum())}")
-
-    # Contrôle de rigueur : publicités « rouge seule » ramenées par un mot-clé de viande blanche.
-    # Si ce nombre est faible, le corpus filtré équivaut à une collecte « viande rouge » seule.
-    from_white_kw = pd.Series(
-        [kw.lower() in {w.lower() for w in WHITE_MEAT_KEYWORDS.get(l, [])} for kw, l in zip(df["keyword"], df["lang"])],
-        index=df.index,
-    )
-    n_check = int((valid & red & ~white & from_white_kw).sum())
-    print(f"Contrôle : {n_check} publicité(s) « rouge seule » trouvée(s) via un mot-clé de viande blanche.\n")
+    print(f"Total : {len(df)} | invalides selon les règles actuelles : {int((~valid).sum())} | "
+          f"viande rouge retenues : {int((valid & red).sum())} | sans viande rouge (écartées) : {int((valid & ~red).sum())}\n")
     return df[valid & red].copy()
-
 
 def annotate_unique_ads(df: pd.DataFrame, group_name: str) -> pd.DataFrame:
     """Dédoublonne au niveau (pays, langue, annonceur, texte) et détecte chaque registre."""
@@ -223,7 +205,6 @@ def annotate_unique_ads(df: pd.DataFrame, group_name: str) -> pd.DataFrame:
             keywords=("keyword", _join_unique),
             image_urls=("image_urls", "first"),
             meat_detail=("meat_detail", "first"),
-            mixte=("mixte", "max"),
         )
     )
     text = df_unique["ad_text"].map(lambda t: EXCLUSION_RX.sub(" ", t))   # correction 2
@@ -257,7 +238,6 @@ def deduplicate_global(df_unique: pd.DataFrame) -> pd.DataFrame:
         "keywords": ("keywords", _join_unique),
         "image_urls": ("image_urls", "first"),
         "meat_detail": ("meat_detail", "first"),
-        "mixte": ("mixte", "max"),
         "has_virility": ("has_virility", "max"),
         "group": ("group", "first"),
     }
@@ -421,22 +401,10 @@ def main():
                       "p_value_fisher", "p_value_holm"]].to_string(index=False))
     print("OR = inf ou 0 : une case vaut 0 → lire odds_ratio_haldane et son IC 95 %.")
 
-    # 5. Sensibilité : viande rouge seule (sans les publicités mixtes)
-    strict = main_global[~main_global["mixte"]]
-    df_sens = pd.DataFrame([
-        {"corpus": "rouge (avec mixtes) — principal", **compare_groups(main_global, ctrl_global, "has_virility")},
-        {"corpus": "rouge seule — sensibilité", **compare_groups(strict, ctrl_global, "has_virility")},
-    ])
-    df_sens.to_csv(RESULTS_DIR / "sensitivity_red_only.csv", index=False, encoding="utf-8-sig")
-    print("\n=== SENSIBILITÉ : AVEC / SANS PUBLICITÉS MIXTES ===")
-    with pd.option_context("display.width", 200, "display.float_format", "{:.4g}".format):
-        print(df_sens[["corpus", "rouge_n", "rouge_total", "rouge_pct", "control_pct", "odds_ratio",
-                       "ci95_low", "ci95_high", "p_value_fisher"]].to_string(index=False))
-
-    # 6. Fichier de vérification manuelle des détections
+    # 5. Fichier de vérification manuelle des détections
     verif = pd.concat([main_global, ctrl_global], ignore_index=True)
     verif = verif[verif[ALL_REG_COLS].any(axis=1)]
-    cols = ["group", "meat_detail", "mixte", "countries", "advertiser", *[f"terme_{n}" for n in REGISTER_RX], "ad_text"]
+    cols = ["group", "meat_detail", "countries", "advertiser", *[f"terme_{n}" for n in REGISTER_RX], "ad_text"]
     verif[cols].to_csv(RESULTS_DIR / "verification_registres.csv", index=False, encoding="utf-8-sig")
     print(f"\n{len(verif)} publicités détectées à relire dans verification_registres.csv")
 
