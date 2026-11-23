@@ -30,7 +30,11 @@ VARIABLES_ESS = [
     'nwspol',
     'netustm',
     'impenva',
+    'anweight',  # AJOUT (pondération) : poids d'analyse ESS (= pspwght × pweight)
 ]
+
+# AJOUT (pondération) : seules ces variables déterminent la suppression d'une ligne
+VARIABLES_CLES_ESS = ['cntry', 'gndr', 'mascfel', 'anweight']  # AJOUT (pondération)
 
 CODES_SPECIAUX_ESS = {
     'gndr': [9],  # AJOUT : 9 = sexe non renseigné
@@ -71,7 +75,8 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     df_subset['ccnthum'] = df_subset['ccnthum'].replace(55, np.nan)
 
   # Suppression des lignes comportant des NaN
-  df_propre = df_subset.dropna()
+  # MODIF (pondération) : suppression limitée aux variables clés, avant : df_subset.dropna()
+  df_propre = df_subset.dropna(subset=VARIABLES_CLES_ESS)  # MODIF (pondération)
   lignes_eliminees = lignes_initiales - len(df_propre)
   print(f'Nombre de lignes éliminées (ESS) : {lignes_eliminees}')
   print(f"Nombre de lignes restantes (ESS) : {len(df_propre)}")
@@ -94,6 +99,7 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
   # Agrégation par pays
   df_agrege = df_propre.groupby('cntry').mean(numeric_only=True).reset_index()
   df_agrege = df_agrege.drop(columns='gndr')  # AJOUT : la moyenne de gndr n'a pas de sens
+  df_agrege = df_agrege.drop(columns='anweight')  # AJOUT (pondération) : la moyenne des poids n'a pas de sens
 
   # AJOUT : mascfel moyen par sexe et effectifs, par pays
   mascfel_sexe = (  # AJOUT
@@ -106,6 +112,15 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
       for stat, sexe in mascfel_sexe.columns  # AJOUT
   ]  # AJOUT
   df_agrege = df_agrege.merge(mascfel_sexe.reset_index(), on='cntry', how='left')  # AJOUT
+
+  # AJOUT (pondération) : mascfel moyen par pays et par sexe, pondéré par anweight
+  mascfel_sexe_w = (  # AJOUT (pondération)
+      df_propre.groupby(['cntry', 'sexe'])  # AJOUT (pondération)
+      .apply(lambda g: np.average(g['mascfel'], weights=g['anweight']))  # AJOUT (pondération)
+      .unstack('sexe')  # AJOUT (pondération)
+  )  # AJOUT (pondération)
+  mascfel_sexe_w.columns = [f'mascfel_{sexe}_w' for sexe in mascfel_sexe_w.columns]  # AJOUT (pondération) : mascfel_homme_w, mascfel_femme_w
+  df_agrege = df_agrege.merge(mascfel_sexe_w.reset_index(), on='cntry', how='left')  # AJOUT (pondération)
 
   df_agrege = df_agrege.rename(columns={'cntry': 'code_pays'})
 
