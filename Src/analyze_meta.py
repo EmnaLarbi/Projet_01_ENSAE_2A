@@ -1,7 +1,7 @@
 """
 Analyse du registre viriliste — publicités viande ROUGE vs groupe témoin
 -----------------------------------------------------------------------
-Script placé dans Src/, à lancer après scraping_meta.py et scrape_control.py.
+Script placé dans Src/, à lancer après scrape.py et scrape_control.py.
 
 Corpus principal : publicités du fichier viande dont le TEXTE (ou l'annonceur)
 mentionne du bœuf ou de l'agneau, quel que soit le mot-clé qui les a ramenées.
@@ -12,32 +12,6 @@ scraper), sans se fier à la colonne meat_type du CSV.
   - analyse de sensibilité : viande rouge seule (aucune mention de viande blanche).
 Les publicités sans viande rouge (viande blanche seule, ou seulement bbq/grill)
 sont écartées.
-
-Corrections par rapport à la version précédente
-1. Fichier témoin : nom aligné sur scrape_control.py (meta_ads_control_clean.csv).
-   Plus de fichier de repli : l'ancien fichier, filtré avec d'anciennes règles,
-   ne peut plus être utilisé sans qu'on le remarque.
-2. Registres resserrés : les plats et charcuteries « du chasseur » (sauce chasseur,
-   Jägerschnitzel, lovecká saláma, vadászkolbász…), « recette ancestrale »,
-   « primal cuts » et les mentions « pour hommes » ne comptent plus comme virils.
-   Les mentions « pour hommes / masculin » sont gardées dans un registre
-   exploratoire séparé (mention_hommes), hors de has_virility.
-3. Formes manquantes ajoutées (testosterona, testosteronas, testosterón…) et
-   couverture complétée pour l'allemand, l'italien et l'espagnol.
-4. Recouvrement des groupes : une publicité témoin identique à une publicité du
-   groupe viande, ou qui parle de bbq / barbecue / grill, est retirée du témoin.
-5. Même nettoyage du pied de page Meta pour les deux groupes.
-6. Test entre pays : si un effectif attendu est < 5, p-value par permutation.
-7. Cellule nulle : OR corrigé (Haldane-Anscombe) affiché à côté de l'OR brut,
-   pour que l'estimation et l'IC 95 % soient cohérents.
-8. Correction de Holm pour les tests multiples (test global + 3 registres).
-9. Mots-clés réellement dédoublonnés lors du regroupement global.
-10. Nouveau : analyse de sensibilité (rouge seule vs rouge + mixtes) et fichier
-    de vérification manuelle des termes détectés.
-
-Limite non corrigeable ici : les scrapers gardent chaque ad_id une seule fois,
-avec le premier pays où il a été vu. La répartition par pays dépend donc de
-l'ordre de collecte (AT avant DE, etc.).
 """
 
 import math
@@ -185,16 +159,26 @@ def load_clean_ads(path: Path) -> pd.DataFrame:
 
 
 def select_red_meat(df: pd.DataFrame) -> pd.DataFrame:
-    """Garde les publicités valides qui mentionnent du bœuf ou de l'agneau."""
+    """Garde les publicités valides mentionnant du bœuf/agneau ou bbq/barbecue/grill."""
     valid = df.apply(lambda r: is_valid_clean_ad(r.to_dict()), axis=1)
     meats = [set(detect_meats(t, a, l)) for t, a, l in zip(df["ad_text"], df["advertiser"], df["lang"])]
+    has_bbq = pd.Series(
+        [
+            bool(BBQ_PATTERN.search(f"{a or ''} {t or ''}"))
+            for t, a in zip(df["ad_text"], df["advertiser"])
+        ],
+        index=df.index,
+    )
     df = df.assign(meat_detail=[",".join(sorted(m)) for m in meats])
-    red = pd.Series([bool(m & RED_MEATS) for m in meats], index=df.index)
+    kept = pd.Series([bool(m & RED_MEATS) for m in meats], index=df.index) | has_bbq
 
-    print("=== SÉLECTION DU CORPUS VIANDE ROUGE (lignes du CSV) ===")
-    print(f"Total : {len(df)} | invalides selon les règles actuelles : {int((~valid).sum())} | "
-          f"viande rouge retenues : {int((valid & red).sum())} | sans viande rouge (écartées) : {int((valid & ~red).sum())}\n")
-    return df[valid & red].copy()
+    print("=== SÉLECTION DU CORPUS PRINCIPAL (lignes du CSV) ===")
+    print(
+        f"Total : {len(df)} | invalides selon les règles actuelles : {int((~valid).sum())} | "
+        f"retenues (viande rouge ou bbq/grill) : {int((valid & kept).sum())} | "
+        f"écartées : {int((valid & ~kept).sum())}\n"
+    )
+    return df[valid & kept].copy()
 
 def annotate_unique_ads(df: pd.DataFrame, group_name: str) -> pd.DataFrame:
     """Dédoublonne au niveau (pays, langue, annonceur, texte) et détecte chaque registre."""
@@ -245,7 +229,7 @@ def deduplicate_global(df_unique: pd.DataFrame) -> pd.DataFrame:
         agg[f"reg_{name}"] = (f"reg_{name}", "max")
         agg[f"terme_{name}"] = (f"terme_{name}", "first")
     out = df_unique.groupby(["advertiser", "ad_text"], as_index=False, dropna=False).agg(**agg)
-    for col in ["has_virility", "mixte", *ALL_REG_COLS]:
+    for col in ["has_virility", *ALL_REG_COLS]:
         out[col] = out[col].astype(bool)
     return out
 

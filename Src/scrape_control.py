@@ -9,24 +9,6 @@ Installation :
 
 Lancement :
     python Src/scrape_control.py
-
-Corrections par rapport à la version précédente
------------------------------------------------
-1. Animaux de compagnie : liste appliquée LANGUE PAR LANGUE (« pas » = chien en
-   croate, mais négation en français : les publicités françaises n'étaient plus
-   rejetées à tort).
-2. Groupe témoin sans viande : les publicités qui parlent de viande (bœuf, agneau,
-   volaille, porc, veau, dans leur langue ou en anglais) sont retirées du fichier
-   nettoyé. Sinon le témoin recoupe le groupe « viande » et la comparaison est faussée.
-3. Mêmes filtres que pour le groupe « viande » : les motifs sont importés de
-   Src/scraping_meta.py (hors sujet, animaux, mots de viande), pour que les deux
-   groupes soient nettoyés de la même façon.
-5. Même méthode d'extraction que le groupe « viande » : repérage des cartes
-   publicitaires, défilement et lecture des blocs importés de Src/scraping_meta.py.
-4. Mots-clés ambigus remplacés (« plat » → écran plat, ventre plat ; « rätt » / « rett »
-   / « réttur » → « correct », « droit » ; « annos » → dose ; « fogás » → prise ;
-   « chod » → marche) et filtre des meubles de cuisine (« cuisine », « Küche »,
-   « cucina », « cocina » ramènent surtout des cuisinistes).
 """
 
 import re
@@ -38,16 +20,14 @@ import pandas as pd
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # Filtres ET méthode de collecte communs avec le groupe « viande » (même dossier Src/) :
-# les deux groupes sont extraits et lus exactement de la même façon.
 from scrape import (
     ETIQUETTES_ID, JS_EXTRAIRE_CARTES, OFF_TOPIC_PATTERN, PAUSE_ENTRE_REQUETES,
     PET_PATTERNS, _ad_langs, _faire_defiler, _fermer_bandeau_cookies, detect_meats,
     parse_ad_block,
 )
 
-
 # ---------------------------------------------------------------------
-# 1. PARAMÈTRES DE COLLECTE (MODE COMPLET)
+# 1. PARAMÈTRES DE COLLECTE
 # ---------------------------------------------------------------------
 
 HEADLESS = True
@@ -70,12 +50,10 @@ RESUME_FROM_EXISTING_CSV = True
 # ---------------------------------------------------------------------
 # 2. MOTS-CLÉS ET PAYS
 # ---------------------------------------------------------------------
-# Les mots ambigus sont remplacés (ancien mot en commentaire). Listes à faire
-# relire par des locuteurs natifs si possible.
 
 CONTROL_KEYWORDS_BY_LANG = {
     "fr": ["alimentation", "aliment", "nourriture", "nutrition", "cuisine",
-           "plat cuisiné",          # « plat » : écran plat, ventre plat…
+           "plat cuisiné",          
            "recette", "repas"],
     "de": ["Ernährung", "Lebensmittel", "Nahrung", "Nahrungsmittel", "Küche",
            "Gericht", "Rezept", "Mahlzeit"],
@@ -84,29 +62,29 @@ CONTROL_KEYWORDS_BY_LANG = {
     "es": ["alimentación", "alimento", "comida", "nutrición", "cocina",
            "plato", "receta", "menú"],
     "fi": ["ravinto", "elintarvike", "ruoka", "ravitsemus", "ruoanlaitto",
-           "ruoka-annos",           # « annos » : aussi une dose de médicament
+           "ruoka-annos",          
            "resepti", "ateria"],
     "hr": ["prehrana", "namirnica", "hrana", "nutricionizam", "kuhanje",
            "jelo", "recept", "obrok"],
     "hu": ["táplálkozás", "élelmiszer", "étel", "táplálkozástudomány", "főzés",
-           "főétel",                # « fogás » : aussi une prise, une astuce
+           "főétel",                
            "recept", "étkezés"],
     "is": ["næring", "matvæli", "matur", "mataræði", "eldamennska",
-           "kvöldmatur",            # « réttur » : aussi « droit », « correct »
+           "kvöldmatur",            
            "uppskrift", "máltíð"],
     "lt": ["mityba", "maistas", "maisto produktas", "mitybos", "gaminimas",
            "patiekalas", "receptas", "valgis"],
     "no": ["ernæring", "matvare", "mat", "kosthold", "matlaging",
-           "middag",                # « rett » : aussi « droit », « correct »
+           "middag",                
            "oppskrift", "måltid"],
     "se": ["näring", "livsmedel", "mat", "kost", "matlagning",
-           "middag",                # « rätt » : aussi « correct », « tribunal »
+           "middag",               
            "recept", "måltid"],
     "si": ["prehrana", "živilo", "hrana", "hranilna", "kuhanje",
            "jed", "recept", "obrok"],
     "sk": ["výživa", "potravina", "jedlo", "stravovanie", "varenie",
            "pokrm", "recept",
-           "obed"],                 # « chod » : aussi « marche », « fonctionnement »
+           "obed"],               
 }
 
 TARGET_COUNTRIES_LANGS = {
@@ -160,7 +138,7 @@ def build_ad_library_url(country: str, keyword: str) -> str:
 # 4. EXTRACTION (même méthode que le groupe « viande »)
 # ---------------------------------------------------------------------
 
-AD_ID_PATTERN = re.compile(r"^\d{10,20}$")      # un identifiant Meta valide
+AD_ID_PATTERN = re.compile(r"^\d{10,20}$")    
 
 META_FOOTER_PATTERNS = [
     r"État du système\s*API Ad Library.*",
@@ -176,14 +154,12 @@ META_FOOTER_REGEX = re.compile(
     flags=re.IGNORECASE | re.DOTALL,
 )
 
-
 def clean_meta_footer(text: str) -> str:
     """Supprime les mentions de pied de page Meta Ad Library en fin de texte."""
     if not isinstance(text, str) or not text.strip():
         return ""
     cleaned = META_FOOTER_REGEX.sub("", text)
     return re.sub(r"\s*$", "", cleaned).strip()
-
 
 def extract_ad_records(
     cards: list[dict],
@@ -229,15 +205,15 @@ def control_rejection_reason(ad_text: str, advertiser: str, lang: str) -> Option
     combined = f"{advertiser or ''} {ad_text or ''}"
     if len(ad_text or "") < 20:
         return "texte trop court"
-    for l in _ad_langs(lang):                       # correction 1 : par langue
+    for l in _ad_langs(lang):                      
         rx = PET_PATTERNS.get(l)
         if rx is not None and rx.search(combined):
             return "animaux de compagnie"
-    if OFF_TOPIC_PATTERN.search(combined):           # correction 3 : mêmes filtres
+    if OFF_TOPIC_PATTERN.search(combined):           
         return "hors sujet"
-    if KITCHEN_FURNITURE_PATTERN.search(combined):   # correction 4
+    if KITCHEN_FURNITURE_PATTERN.search(combined):  
         return "meubles de cuisine"
-    if detect_meats(ad_text, advertiser, lang):      # correction 2 : témoin sans viande
+    if detect_meats(ad_text, advertiser, lang):     
         return "mentionne de la viande"
     return None
 
@@ -344,7 +320,7 @@ def scrape_control() -> None:
     plan = build_control_search_plan(COUNTRIES_TO_SCRAPE, MAX_QUERIES)
     all_ads, seen_ids = load_existing_data(RAW_FILE) if RESUME_FROM_EXISTING_CSV else ([], set())
 
-    # Requêtes déjà terminées (journal), même celles qui n'ont rien apporté de nouveau
+    # Requêtes déjà terminées
     deja_faites = set()
     if RESUME_FROM_EXISTING_CSV and DONE_FILE.exists():
         deja_faites = {tuple(l.split("\t")) for l in DONE_FILE.read_text(encoding="utf-8").splitlines() if l}
@@ -355,7 +331,7 @@ def scrape_control() -> None:
     requetes_vides = 0
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=HEADLESS)       # navigateur standard, sans déguisement
+            browser = p.chromium.launch(headless=HEADLESS)     
             context = browser.new_context(locale="fr-FR", viewport={"width": 1440, "height": 900})
             page = context.new_page()
 
@@ -407,7 +383,7 @@ def scrape_control() -> None:
 
             browser.close()
     finally:
-        # Sauvegarde finale, y compris en cas d'interruption (Ctrl+C, erreur)
+        # Sauvegarde finale, y compris en cas d'interruption
         save_control_outputs(all_ads, RAW_FILE, CLEAN_FILE)
         print("\nCollecte témoin terminée.")
 
