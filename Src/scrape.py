@@ -442,7 +442,7 @@ def _faire_defiler(page, max_scrolls: int) -> None:
         precedent = actuel
 
 
-def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
+def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_index: int = 1):
     base_dir = Path(__file__).resolve().parent.parent
     processed_dir = base_dir / "Data" / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
@@ -450,7 +450,10 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
     clean_file = processed_dir / "meta_ads_meat_bbq_clean.csv"
 
     plan = build_search_plan()
-    print(f"Plan viande & barbecue : {len(plan)} requêtes sur {len(TARGET_COUNTRIES_LANGS)} pays.")
+    total_plan = len(plan)
+    if start_index > 1:
+        plan = plan[start_index - 1:]
+    print(f"Plan viande & barbecue : {len(plan)} requêtes restantes (à partir de {start_index}/{total_plan}).")
 
     clean_ads: list[dict] = []
     seen_ids: set[str] = set()
@@ -474,12 +477,13 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
             context = browser.new_context(locale="fr-FR", viewport={"width": 1440, "height": 900})
             page = context.new_page()
 
-            for idx, (country, lang, kw) in enumerate(plan, start=1):
+            for offset, (country, lang, kw) in enumerate(plan, start=1):
+                idx = start_index + offset
                 url = (
                     "https://www.facebook.com/ads/library/"
                     f"?active_status=all&ad_type=all&country={country}&q={urllib.parse.quote(kw)}"
                 )
-                print(f"\n[{idx}/{len(plan)}] Pays : {country} ({lang}) | Mot-clé : '{kw}'")
+                print(f"\n[{idx}/{total_plan}] Pays : {country} ({lang}) | Mot-clé : '{kw}'")
 
                 try:
                     page.goto(url, wait_until="domcontentloaded", timeout=35000)
@@ -541,4 +545,4 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
 
 
 if __name__ == "__main__":
-    scrape_meta_ads()
+    scrape_meta_ads(start_index=186)
