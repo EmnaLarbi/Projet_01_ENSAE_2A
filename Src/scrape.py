@@ -1,8 +1,8 @@
 import re
 import time
 import urllib.parse
-import pandas as pd
 from pathlib import Path
+import pandas as pd
 from playwright.sync_api import sync_playwright
 
 PET_BLACKLIST = [
@@ -93,81 +93,45 @@ OFF_TOPIC_PATTERNS = [
     r"\bérythritol\b", r"\beritritol\b", r"\bédulcorant\b", r"\bsüßstoff\b",
 ]
 
-# Mots-clés centrés uniquement sur la viande (bœuf, viande rouge, pièces) et le barbecue/grill
-KEYWORDS_BY_LANG = {
-    "fr": [
-        "viande rouge", "viande de bœuf", "viande", "bœuf", "boeuf",
-        "steak", "entrecôte", "côte de bœuf", "rôti",
-        "barbecue", "bbq", "grill"
-    ],
-    "en": [
-        "red meat", "beef", "steak", "meat",
-        "sirloin", "ribeye", "brisket", "ground beef",
-        "barbecue", "bbq", "grill"
-    ],
-    "de": [
-        "rotes Fleisch", "Rindfleisch", "Steak", "Fleisch",
-        "Rindersteak", "Braten", "Hackfleisch",
-        "Grill", "grillen", "Barbecue", "BBQ"
-    ],
-    "it": [
-        "carne rossa", "carne di manzo", "bistecca", "carne",
-        "manzo", "costata", "fiorentina", "arrosto",
-        "griglia", "grigliata", "barbecue", "bbq"
-    ],
-    "es": [
-        "carne roja", "carne de res", "filete", "carne",
-        "ternera", "chuletón", "solomillo", "asado",
-        "barbacoa", "parrilla", "bbq", "grill"
-    ],
-    "fi": [
-        "punainen liha", "naudanliha", "pihvi", "liha",
-        "nauta", "paisti", "jauheliha",
-        "grilli", "grillaus", "bbq", "barbecue"
-    ],
-    "hr": [
-        "crveno meso", "govedina", "odrezak", "meso",
-        "junetina", "biftek", "pečenje",
-        "roštilj", "bbq", "barbecue"
-    ],
-    "hu": [
-        "vörös hús", "marhahús", "steak", "hús",
-        "marha", "bélszín", "sült",
-        "grill", "grillezes", "bbq", "barbecue"
-    ],
-    "is": [
-        "rautt kjöt", "nautakjöt", "steik", "kjöt",
-        "nautakjötssteik", "steiktur",
-        "grill", "bbq", "barbecue"
-    ],
-    "lt": [
-        "raudona mėsa", "jautiena", "kepsnys", "mėsa",
-        "jautienos kepsnys", "kepta mėsa",
-        "grilis", "kepsninė", "bbq", "barbecue"
-    ],
-    "no": [
-        "rødt kjøtt", "storfekjøtt", "biff", "kjøtt",
-        "entrecôte", "stek", "kjøttdeig",
-        "grill", "grilling", "bbq", "barbecue"
-    ],
-    "se": [
-        "rött kött", "nötkött", "biff", "kött",
-        "entrecôte", "stek", "köttfärs",
-        "grill", "grilla", "bbq", "barbecue"
-    ],
-    "si": [
-        "rdeče meso", "govedina", "zrezek", "meso",
-        "pljučni file", "pečenka",
-        "žar", "bbq", "barbecue"
-    ],
-    "sk": [
-        "červené mäso", "hovädzie mäso", "steak", "mäso",
-        "roštenka", "pečienka", "mleté mäso",
-        "gril", "grilovanie", "bbq", "barbecue"
-    ],
+RED_MEAT_KEYWORDS = {
+    "fr": ["viande rouge", "viande de bœuf", "bœuf", "boeuf", "steak", "entrecôte", "côte de bœuf", "rôti"],
+    "en": ["red meat", "beef", "steak", "sirloin", "ribeye", "brisket", "ground beef"],
+    "de": ["rotes Fleisch", "Rindfleisch", "Steak", "Rindersteak", "Braten", "Hackfleisch"],
+    "it": ["carne rossa", "carne di manzo", "bistecca", "manzo", "costata", "fiorentina", "arrosto"],
+    "es": ["carne roja", "carne de res", "filete", "ternera", "chuletón", "solomillo", "asado"],
+    "fi": ["punainen liha", "naudanliha", "pihvi", "nauta", "paisti", "jauheliha"],
+    "hr": ["crveno meso", "govedina", "odrezak", "junetina", "biftek", "pečenje"],
+    "hu": ["vörös hús", "marhahús", "steak", "marha", "bélszín", "sült"],
+    "is": ["rautt kjöt", "nautakjöt", "steik", "nautakjötssteik", "steiktur"],
+    "lt": ["raudona mėsa", "jautiena", "kepsnys", "jautienos kepsnys", "kepta mėsa"],
+    "no": ["rødt kjøtt", "storfekjøtt", "biff", "entrecôte", "stek", "kjøttdeig"],
+    "se": ["rött kött", "nötkött", "biff", "entrecôte", "stek", "köttfärs"],
+    "si": ["rdeče meso", "govedina", "zrezek", "pljučni file", "pečenka"],
+    "sk": ["červené mäso", "hovädzie mäso", "steak", "roštenka", "pečienka", "mleté mäso"],
 }
 
-# Langues locales uniquement (sans "en" systématique)
+WHITE_MEAT_KEYWORDS = {
+    "fr": ["viande blanche", "poulet", "volaille", "dinde", "porc", "veau", "escalope", "filet de poulet"],
+    "en": ["white meat", "chicken", "poultry", "turkey", "pork", "veal", "chicken breast"],
+    "de": ["weißes Fleisch", "Hähnchen", "Hühnchen", "Geflügel", "Pute", "Schweinefleisch", "Kalbfleisch", "Schnitzel"],
+    "it": ["carne bianca", "pollo", "pollame", "tacchino", "maiale", "vitello", "petto di pollo"],
+    "es": ["carne blanca", "pollo", "ave", "pavo", "cerdo", "pechuga de pollo"],
+    "fi": ["vaalea liha", "kana", "broileri", "siipikarja", "kalkkuna", "sianliha", "vasikanliha"],
+    "hr": ["bijelo meso", "piletina", "perad", "puretina", "svinjetina", "teletina"],
+    "hu": ["fehér hús", "csirke", "csirkehús", "baromfi", "pulyka", "sertéshús", "borjúhús"],
+    "is": ["hvítt kjöt", "kjúklingur", "alifuglakjöt", "kalkúnn", "svínakjöt", "kálfakjöt"],
+    "lt": ["balta mėsa", "vištiena", "paukštiena", "kalakutiena", "kiauliena", "veršiena"],
+    "no": ["hvitt kjøtt", "kylling", "fjærfe", "kalkun", "svinekjøtt", "kalvekjøtt"],
+    "se": ["vitt kött", "kyckling", "fågel", "kalkon", "fläskkött", "kalvkött"],
+    "si": ["belo meso", "piščanec", "perutnina", "puran", "svinjina", "teletina"],
+    "sk": ["biele mäso", "kuracie mäso", "kura", "hydina", "morčacie mäso", "bravčové mäso", "teľacie mäso"],
+}
+
+KEYWORDS_BY_LANG = {
+    lang: sorted(set(RED_MEAT_KEYWORDS.get(lang, [])) | set(WHITE_MEAT_KEYWORDS.get(lang, [])))
+    for lang in set(RED_MEAT_KEYWORDS) | set(WHITE_MEAT_KEYWORDS)
+}
+
 TARGET_COUNTRIES_LANGS = {
     "AT": ["de"],
     "CH": ["de", "fr", "it"],
@@ -191,10 +155,17 @@ EXCLUSION_PATTERN = re.compile("|".join(MEAT_EXCLUSION_PATTERNS), flags=re.IGNOR
 OFF_TOPIC_PATTERN = re.compile("|".join(OFF_TOPIC_PATTERNS), flags=re.IGNORECASE)
 
 UNIVERSAL_RELEVANCE_TERMS = ["bbq", "barbecue", "grill", "steak", "bacon"]
+RED_MEAT_PATTERN = re.compile(
+    r"\b(?:" + "|".join(map(re.escape, sorted(set(RED_MEAT_KEYWORDS["fr"] + [t for v in RED_MEAT_KEYWORDS.values() for t in v]), key=len, reverse=True))) + r")\b",
+    flags=re.IGNORECASE,
+)
+WHITE_MEAT_PATTERN = re.compile(
+    r"\b(?:" + "|".join(map(re.escape, sorted(set([t for v in WHITE_MEAT_KEYWORDS.values() for t in v]), key=len, reverse=True))) + r")\b",
+    flags=re.IGNORECASE,
+)
 
 
 def _build_relevance_regexes() -> dict[str, re.Pattern]:
-    """Compile un motif par langue exigeant au moins un mot viande/BBQ dans le texte."""
     compiled: dict[str, re.Pattern] = {}
     all_terms = set(UNIVERSAL_RELEVANCE_TERMS)
     for pats in KEYWORDS_BY_LANG.values():
@@ -213,18 +184,14 @@ RELEVANCE_REGEXES = _build_relevance_regexes()
 
 
 def has_meat_bbq_relevance(text: str, lang: str = "", advertiser: str = "") -> bool:
-    """Vérifie que le texte ou l'annonceur contient un terme viande/BBQ."""
     combined = f"{advertiser or ''} {text or ''}".strip()
     if not combined:
         return False
     rx = RELEVANCE_REGEXES.get(str(lang or "").lower().strip(), RELEVANCE_REGEXES["_fallback"])
-    if rx.search(combined):
-        return True
-    return bool(RELEVANCE_REGEXES["_fallback"].search(combined))
+    return bool(rx.search(combined) or RELEVANCE_REGEXES["_fallback"].search(combined))
 
 
 def build_search_plan() -> list[tuple[str, str, str]]:
-    """Retourne une liste de tuples (country, lang, keyword)."""
     plan = []
     for country, langs in TARGET_COUNTRIES_LANGS.items():
         for lang in langs:
@@ -234,9 +201,7 @@ def build_search_plan() -> list[tuple[str, str, str]]:
 
 
 def parse_ad_block(block_text: str) -> dict:
-    """Découpe proprement le texte brut d'une carte d'annonce Meta."""
     lines = [line.strip() for line in block_text.split("\n") if line.strip()]
-
     status = ""
     ad_id = ""
     start_date = ""
@@ -277,7 +242,6 @@ def parse_ad_block(block_text: str) -> dict:
 
 
 def is_valid_clean_ad(ad: dict) -> bool:
-    """Vérifie qu'une annonce est valide, non hors-sujet et contient un terme viande/BBQ."""
     text = str(ad.get("ad_text") or "").strip()
     advertiser = str(ad.get("advertiser") or "").strip()
     lang = str(ad.get("lang") or "").strip()
@@ -296,13 +260,25 @@ def is_valid_clean_ad(ad: dict) -> bool:
     return True
 
 
+def detect_meat_type(text: str, advertiser: str = "", keyword: str = "") -> str:
+    combined = f"{advertiser or ''} {keyword or ''} {text or ''}".strip()
+    has_red = bool(RED_MEAT_PATTERN.search(combined))
+    has_white = bool(WHITE_MEAT_PATTERN.search(combined))
+    if has_red and has_white:
+        return "both"
+    if has_red:
+        return "red_meat"
+    if has_white:
+        return "white_meat"
+    return "general_meat_bbq"
+
+
 def save_clean_output(clean_ads: list[dict], clean_file: Path):
-    """Nettoie, filtre les hors-sujet, dédoublonne et sauvegarde meta_ads_meat_bbq_clean.csv."""
     if not clean_ads:
         return
 
     cols = [
-        "country", "lang", "keyword", "ad_id", "status",
+        "country", "lang", "keyword", "meat_type", "ad_id", "status",
         "start_date", "advertiser", "ad_text", "image_urls", "n_variants"
     ]
     df_clean = pd.DataFrame(clean_ads)
@@ -317,6 +293,10 @@ def save_clean_output(clean_ads: list[dict], clean_file: Path):
     if len(df_clean) == 0:
         return
 
+    df_clean["meat_type"] = df_clean.apply(
+        lambda r: detect_meat_type(r.get("ad_text", ""), r.get("advertiser", ""), r.get("keyword", "")),
+        axis=1,
+    )
     df_clean["n_variants"] = df_clean.groupby(["advertiser", "ad_text"])["ad_id"].transform("count")
     df_clean = df_clean[cols]
     df_clean.to_csv(clean_file, index=False, encoding="utf-8-sig")
@@ -335,11 +315,14 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
     clean_ads = []
     seen_ids = set()
 
-    # Reprise depuis le fichier nettoyé existant en cas d'arrêt ou d'erreur précédente
     if clean_file.exists():
         try:
             existing = pd.read_csv(clean_file, dtype={"ad_id": str}, encoding="utf-8-sig")
-            existing_valid = existing[existing.apply(lambda r: is_valid_clean_ad(r.to_dict()), axis=1)]
+            existing_valid = existing[existing.apply(lambda r: is_valid_clean_ad(r.to_dict()), axis=1)].copy()
+            existing_valid["meat_type"] = existing_valid.apply(
+                lambda r: detect_meat_type(r.get("ad_text", ""), r.get("advertiser", ""), r.get("keyword", "")),
+                axis=1,
+            )
             clean_ads = existing_valid.to_dict(orient="records")
             seen_ids = set(existing_valid["ad_id"].dropna().astype(str))
             print(
@@ -388,83 +371,3 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10):
                             page.wait_for_timeout(1200)
                             break
                     except Exception:
-                        pass
-
-                last_height = 0
-                for _ in range(max_scrolls):
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                    page.wait_for_timeout(2000)
-                    new_height = page.evaluate("document.body.scrollHeight")
-                    if new_height == last_height:
-                        break
-                    last_height = new_height
-
-                body_text = page.inner_text("body")
-                pattern = re.compile(r"(?:ID dans la bibliothèque|Library ID)\s*:\s*(\d{10,20})")
-                matches = list(pattern.finditer(body_text))
-
-                new_count = 0
-                for m_idx, match in enumerate(matches):
-                    ad_id = match.group(1)
-                    if ad_id in seen_ids:
-                        continue
-                    seen_ids.add(ad_id)
-
-                    start_pos = max(0, match.start() - 30)
-                    end_pos = matches[m_idx + 1].start() if m_idx + 1 < len(matches) else match.start() + 2500
-                    ad_block = body_text[start_pos:end_pos]
-
-                    parsed = parse_ad_block(ad_block)
-                    parsed["ad_id"] = ad_id
-                    parsed["country"] = country
-                    parsed["lang"] = lang
-                    parsed["keyword"] = kw
-
-                    if not is_valid_clean_ad(parsed):
-                        continue
-
-                    img_urls = []
-                    try:
-                        card_container = page.locator(f"xpath=//*[contains(text(), '{ad_id}')]/ancestor::div[5]").first
-                        for img in card_container.locator("img").all():
-                            src = img.get_attribute("src") or ""
-                            if "scontent" in src:
-                                w_raw = img.get_attribute("width")
-                                try:
-                                    if not w_raw or int(w_raw) > 80:
-                                        img_urls.append(src)
-                                except ValueError:
-                                    img_urls.append(src)
-                    except Exception:
-                        pass
-
-                    parsed["image_urls"] = "; ".join(dict.fromkeys(img_urls))
-                    clean_ads.append(parsed)
-                    new_count += 1
-
-                print(f" -> {new_count} nouvelles annonces propres retenues.")
-
-                if idx % checkpoint_every == 0:
-                    save_clean_output(clean_ads, clean_file)
-                    print(f" [Checkpoint] Sauvegarde dans {clean_file} ({len(clean_ads)} annonces propres).")
-
-                time.sleep(1.5)
-
-            browser.close()
-
-    except Exception as e:
-        print(f"\nInterruption ou erreur inattendue : {e}")
-        save_clean_output(clean_ads, clean_file)
-        print(f"Sauvegarde de sécurité effectuée dans {clean_file}.")
-        raise
-
-    if not clean_ads:
-        print("\nAucune annonce propre extraite.")
-        return
-
-    save_clean_output(clean_ads, clean_file)
-    print(f"\n[Propre] {clean_file} ({len(clean_ads)} annonces propres enregistrées au total).")
-
-
-if __name__ == "__main__":
-    scrape_meta_ads(max_scrolls=8, checkpoint_every=10)
