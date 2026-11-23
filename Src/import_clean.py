@@ -115,7 +115,7 @@ def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 def executer_ess():
   if not CHEMIN_BRUT_ESS.exists():
     print(
-        f'⚠️ Fichier ESS introuvable à l’emplacement : {CHEMIN_BRUT_ESS}. Étape'
+        f' Fichier ESS introuvable à l’emplacement : {CHEMIN_BRUT_ESS}. Étape'
         ' ignorée.'
     )
     return
@@ -127,7 +127,7 @@ def executer_ess():
   DOSSIER_PROCESSED.mkdir(parents=True, exist_ok=True)
   propre.to_csv(DOSSIER_PROCESSED / 'ess11_nettoye.csv', index=False)
   agrege.to_csv(DOSSIER_PROCESSED / 'ess11_agrege_pays.csv', index=False)
-  print(f'💾 Fichiers ESS sauvegardés dans {DOSSIER_PROCESSED}/\n')
+  print(f' Fichiers ESS sauvegardés dans {DOSSIER_PROCESSED}/\n')
 
 # ==========================================
 # 2. TRAITEMENT ET AGRÉGATION DE L'ISSP 2020
@@ -211,7 +211,7 @@ def ajouter_ecart_sexes_issp(pays: pd.DataFrame) -> pd.DataFrame:
 def executer_issp():
   if not CHEMIN_BRUT_ISSP.exists():
     print(
-        f"⚠️ Fichier ISSP introuvable à l’emplacement : {CHEMIN_BRUT_ISSP}."
+        f"Fichier ISSP introuvable à l’emplacement : {CHEMIN_BRUT_ISSP}."
         " Étape ignorée."
     )
     return
@@ -232,20 +232,20 @@ def executer_issp():
       f"Base nettoyée (ISSP) : {len(propre)} répondants"
       f" ({len(brut) - len(propre)} lignes supprimées)"
   )
-  print(f"💾 Fichier ISSP propre sauvegardé dans {CHEMIN_PROPRE_ISSP}")
+  print(f" Fichier ISSP propre sauvegardé dans {CHEMIN_PROPRE_ISSP}")
   print(
-      f"💾 Fichier ISSP agrégé par pays sauvegardé dans {CHEMIN_PAYS_ISSP}\n"
+      f" Fichier ISSP agrégé par pays sauvegardé dans {CHEMIN_PAYS_ISSP}\n"
   )
   print(pays.sort_values("ecart_h_f", ascending=False).round(2))
 
 
 # ==========================================
-# 🚀 POINT D'ENTRÉE GLOBAL
+#  POINT D'ENTRÉE GLOBAL
 # ==========================================
 def main():
   executer_ess()
   executer_issp()
-  print("✨ Traitement global de toutes les bases terminé avec succès !")
+  print(" Traitement global de toutes les bases terminé avec succès !")
 
 
 if __name__ == "__main__":
