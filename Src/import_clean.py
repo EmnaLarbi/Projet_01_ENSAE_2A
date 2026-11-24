@@ -7,7 +7,7 @@ RACINE = Path(__file__).resolve().parents[1] if "__file__" in locals() else Path
 DOSSIER_PROCESSED = RACINE / "Data" / "processed"
 
 # ==========================================
-# 1. TRAITEMENT DE L'ESS 11
+# 1. TRAITEMENT ET AGREGATION DE L'ESS 11
 # ==========================================
 
 CHEMIN_BRUT_ESS = RACINE / "Data" / "raw" / "ESS11e04_2.csv"
