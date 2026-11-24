@@ -7,7 +7,7 @@ Le script :
     1. télécharge l'indicateur pour tous les pays et toutes les années demandées ;
     2. retire les agrégats (régions, groupes de revenu, monde…) pour ne garder que les pays ;
     3. enregistre une table au format long (une ligne = un pays × une année) dans
-       Data/raw/pib_hab_ppa_banque_mondiale.csv.
+       Data/processed/pib_hab_ppa_banque_mondiale.csv.
 
 Usage, depuis la racine du projet :
     python Src/data_upload.py
@@ -28,7 +28,7 @@ PAR_PAGE = 20000                       # nombre de lignes par page de résultats
 DELAI_MAX = 60                         # secondes avant d'abandonner une requête
 
 RACINE = Path(__file__).resolve().parents[1]
-CHEMIN_SORTIE = RACINE / "Data" / "raw" / "pib_hab_ppa_banque_mondiale.csv"
+CHEMIN_SORTIE = RACINE / "Data" / "processed" / "pib_hab_ppa_banque_mondiale.csv"
 
 # Pays de l'analyse (codes ISO3), pour le contrôle final
 PAYS_ANALYSE = ["AUT", "CHE", "DEU", "ESP", "FIN", "FRA", "HRV", "HUN",
@@ -89,9 +89,9 @@ def controler(df: pd.DataFrame) -> None:
     annee = df[df["annee"] == ANNEE_CONTROLE].set_index("iso3")["pib_hab_ppa"]
     manquants = [p for p in PAYS_ANALYSE if p not in annee.index]
     if manquants:
-        print(f"⚠️ Pays de l'analyse sans valeur en {ANNEE_CONTROLE} : {manquants}")
+        print(f" Pays de l'analyse sans valeur en {ANNEE_CONTROLE} : {manquants}")
     else:
-        print(f"✅ Les {len(PAYS_ANALYSE)} pays de l'analyse ont une valeur en {ANNEE_CONTROLE}.")
+        print(f" Les {len(PAYS_ANALYSE)} pays de l'analyse ont une valeur en {ANNEE_CONTROLE}.")
     print(annee.reindex(PAYS_ANALYSE).round(0).to_string())
 
 

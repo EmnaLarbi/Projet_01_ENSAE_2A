@@ -11,7 +11,7 @@ CHEMIN_ESS = PROC / "ess11_agrege_pays.csv"
 CHEMIN_ISSP = PROC / "issp_par_pays.csv"
 # PIB par habitant en PPA (dollars internationaux constants de 2021), produit par Src/data_upload.py
 # à partir de l'API de la Banque mondiale. Format long : iso3, pays, annee, pib_hab_ppa.
-CHEMIN_GDP = RACINE / "Data" / "raw" / "pib_hab_ppa_banque_mondiale.csv"
+CHEMIN_GDP = PROC / "pib_hab_ppa_banque_mondiale.csv"
 CHEMIN_SORTIE = PROC / "table_jointe.csv"
 
 ANNEE_PIB = 2022  # Année cible pour le PIB par habitant

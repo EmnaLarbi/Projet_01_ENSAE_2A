@@ -170,7 +170,7 @@ def charger_individuel(chemin: Path = CLEAN_PATH) -> pd.DataFrame:
         log.warning("poids ≤ 0 : %d lignes exclues", poids_invalides.sum())
     df = df[~poids_invalides]
 
-    # Plage de la fréquence : simple information, AUCUNE transformation.
+    # Plage de la fréquence
     x = df["jours_viande_rouge"].dropna()
     log.info("jours_viande_rouge : min=%.2f  max=%.2f  modalités distinctes=%d",
              x.min(), x.max(), x.nunique())
