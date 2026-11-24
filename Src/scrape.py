@@ -4,113 +4,74 @@ from pathlib import Path
 import pandas as pd
 from playwright.sync_api import sync_playwright
 
-# =============================================================================
-# SCRAPING DE LA BIBLIOTHÈQUE PUBLICITAIRE META — viande rouge et blanche.
-# Les noms et signatures des fonctions sont inchangés : la boucle de collecte
-# `scrape_meta_ads` fonctionne sans modification.
-#
-# Corrections :
-#   1. Viande ROUGE = bœuf et agneau uniquement ; viande BLANCHE = volaille, porc, veau.
-#   2. Le type de viande ne dépend plus du mot-clé de recherche, seulement du texte
-#      et de l'annonceur.
-#   3. Liste des animaux de compagnie appliquée LANGUE PAR LANGUE
-#      (« pas » = chien en croate, mais négation en français).
-#   4. Termes ambigus retirés (rôti, Braten, arrosto, asado, sült, stek, paisti,
-#      pečenje, pečenka, Hackfleisch, jauheliha, solomillo…) et mots trop courts
-#      (ave, kana, kura).
-#   5. Pertinence évaluée dans la langue de la requête (+ anglais), sans liste de
-#      secours toutes langues confondues.
-#   + Langues à déclinaisons : reconnaissance des formes fléchies (govedinom, naudanlihaa…).
-# =============================================================================
+"""
+Scraping de publicités Meta – viande rouge et barbecue/grill
+------------------------------------------------------------
+Collecte complète sur tous les pays et mots-clés ciblés avec Playwright.
 
+Installation :
+    pip install pandas playwright
+    playwright install chromium
+
+Lancement :
+    python Src/scrape.py
+"""
 # -----------------------------------------------------------------------------
 # 1. MOTS-CLÉS DE VIANDE PAR LANGUE ET PAR TYPE
-#    Codes de langue internes inchangés (« se » = suédois, « si » = slovène, « no » = norvégien).
 # -----------------------------------------------------------------------------
 
 MEAT_KEYWORDS = {
     "fr": {"boeuf": ["bœuf", "boeuf", "viande bovine", "entrecôte", "côte de bœuf", "bavette", "steak haché"],
            "agneau": ["agneau", "gigot", "mouton"],
-           "volaille": ["poulet", "volaille", "dinde"],
-           "porc": ["porc", "jambon", "lardons"],
-           "veau": ["veau"]},
+           },
     "en": {"boeuf": ["beef", "steak", "sirloin", "ribeye", "brisket"],
            "agneau": ["lamb", "mutton"],
-           "volaille": ["chicken", "poultry", "turkey"],
-           "porc": ["pork", "bacon"],
-           "veau": ["veal"]},
+           },
     "de": {"boeuf": ["Rindfleisch", "Rind", "Rindersteak", "Steak"],
            "agneau": ["Lammfleisch", "Lamm"],
-           "volaille": ["Hähnchen", "Hühnchen", "Geflügel", "Pute", "Putenfleisch"],
-           "porc": ["Schweinefleisch", "Schwein", "Schinken"],
-           "veau": ["Kalbfleisch", "Kalb"]},
+           },
     "it": {"boeuf": ["manzo", "carne di manzo", "carne bovina", "bistecca", "fiorentina"],
            "agneau": ["agnello", "carne ovina"],
-           "volaille": ["pollo", "tacchino", "pollame"],
-           "porc": ["maiale", "carne suina", "prosciutto"],
-           "veau": ["vitello"]},
+           },
     "es": {"boeuf": ["carne de vacuno", "vacuno", "ternera", "buey", "chuletón"],  # « ternera » = bœuf en Espagne
            "agneau": ["cordero"],
-           "volaille": ["pollo", "pavo", "pechuga de pollo"],
-           "porc": ["cerdo", "jamón"],
-           "veau": []},
+           },
     "fi": {"boeuf": ["naudanliha", "nauta"],
            "agneau": ["lammas", "lampaanliha"],
-           "volaille": ["broileri", "kananliha", "kalkkuna"],
-           "porc": ["sianliha", "porsas", "kinkku"],
-           "veau": ["vasikanliha"]},
+           },
     "hr": {"boeuf": ["govedina", "junetina"],
            "agneau": ["janjetina", "ovčetina"],
-           "volaille": ["piletina", "puretina", "perad"],
-           "porc": ["svinjetina", "šunka"],
-           "veau": ["teletina"]},
+           },
     "hu": {"boeuf": ["marhahús", "marha"],
            "agneau": ["bárányhús", "bárány"],
-           "volaille": ["csirkehús", "csirke", "pulyka", "baromfi"],
-           "porc": ["sertéshús", "sertés", "sonka"],
-           "veau": ["borjúhús", "borjú"]},
+           },
     "is": {"boeuf": ["nautakjöt"],
            "agneau": ["lambakjöt", "lambalæri"],
-           "volaille": ["kjúklingur", "kalkúnn"],
-           "porc": ["svínakjöt", "skinka"],
-           "veau": ["kálfakjöt"]},
+           },
     "lt": {"boeuf": ["jautiena"],
            "agneau": ["ėriena", "aviena"],
-           "volaille": ["vištiena", "kalakutiena", "paukštiena"],
-           "porc": ["kiauliena", "kumpis"],
-           "veau": ["veršiena"]},
+           },
     "no": {"boeuf": ["storfekjøtt", "oksekjøtt", "biff"],
            "agneau": ["lammekjøtt", "fårikål"],
-           "volaille": ["kylling", "kalkun"],
-           "porc": ["svinekjøtt", "skinke"],
-           "veau": ["kalvekjøtt"]},
+           },
     "se": {"boeuf": ["nötkött", "oxfilé"],
            "agneau": ["lammkött", "lamm"],
-           "volaille": ["kyckling", "kalkon"],
-           "porc": ["fläskkött", "fläsk", "skinka"],
-           "veau": ["kalvkött"]},
+           },
     "si": {"boeuf": ["govedina", "goveje meso"],
            "agneau": ["jagnjetina"],
-           "volaille": ["piščanec", "piščančje meso", "puran", "perutnina"],
-           "porc": ["svinjina", "pršut"],
-           "veau": ["teletina"]},
+           },
     "sk": {"boeuf": ["hovädzie mäso", "hovädzie"],
            "agneau": ["jahňacie mäso", "jahňacie"],
-           "volaille": ["kuracie mäso", "kuracie", "morčacie mäso", "hydina"],
-           "porc": ["bravčové mäso", "bravčové"],
-           "veau": ["teľacie mäso"]},
+           },
 }
 
-# Point 1 : seuls le bœuf et l'agneau sont des viandes rouges
-MEAT_CATEGORY = {"boeuf": "red", "agneau": "red", "volaille": "white", "porc": "white", "veau": "white"}
+# Seuls le bœuf et l'agneau sont des viandes rouges
+MEAT_CATEGORY = {"boeuf": "red", "agneau": "red"}
 
 # Rétrocompatibilité : mêmes noms qu'avant
 RED_MEAT_KEYWORDS = {l: [t for d, ts in v.items() if MEAT_CATEGORY[d] == "red" for t in ts]
                      for l, v in MEAT_KEYWORDS.items()}
-WHITE_MEAT_KEYWORDS = {l: [t for d, ts in v.items() if MEAT_CATEGORY[d] == "white" for t in ts]
-                       for l, v in MEAT_KEYWORDS.items()}
-KEYWORDS_BY_LANG = {l: sorted(set(RED_MEAT_KEYWORDS[l]) | set(WHITE_MEAT_KEYWORDS[l]))
-                    for l in MEAT_KEYWORDS}
+KEYWORDS_BY_LANG = {l: sorted(set(RED_MEAT_KEYWORDS[l])) for l in MEAT_KEYWORDS}
 
 TARGET_COUNTRIES_LANGS = {
     "AT": ["de"], "CH": ["de", "fr", "it"], "DE": ["de"], "ES": ["es"], "FI": ["fi"],
@@ -126,7 +87,7 @@ INFLECTED_LANGS = {"fi", "hu", "lt", "hr", "si", "sk", "is"}
 # 2. FILTRES D'EXCLUSION
 # -----------------------------------------------------------------------------
 
-# Point 3 : animaux de compagnie, PAR LANGUE
+# Animaux de compagnie, PAR LANGUE
 PET_BY_LANG = {
     "fr": ["chien", "chiens", "chiot", "chiots", "chat", "chats", "chaton", "chatons", "croquette",
            "croquettes", "animal de compagnie", "animaux de compagnie", "vétérinaire"],
@@ -158,7 +119,7 @@ PET_BY_LANG = {
            "krmivo pre mačky", "domáce zvieratá"],
 }
 
-# Mentions « sans viande » / alternatives végétales (inchangées)
+# Mentions « sans viande » / alternatives végétales
 MEAT_EXCLUSION_PATTERNS = [
     r"\bsans\s+viande\b", r"\bsans\s+b[œoe]uf\b", r"\balternative\s+(?:à\s+la\s+viande|végétale|au\s+b[œoe]uf)\b",
     r"\b100\s*%\s*v[ée]g[ée]tal\b", r"\bv[ée]g[ée]tarien\w*\b", r"\bv[ée]gan\w*\b", r"\bplant[- ]based\b",
@@ -180,7 +141,7 @@ MEAT_EXCLUSION_PATTERNS = [
     r"\bbrez\s+mesa\b", r"\bbez\s+mäsa\b", r"\brastlinn\w*\b", r"\bvegan\w*\b", r"\bvegetarián\w*\b",
 ]
 
-# Hors sujet (inchangé)
+# Hors sujet
 OFF_TOPIC_PATTERNS = [
     r"\blavage\b", r"\blave[- ]linge\b", r"\bnettoyant\b", r"\bdétachant\b", r"\badoucissant\b",
     r"\bwaschmittel\b", r"\bweichspüler\b", r"\breiniger\b", r"\bhaushalt\w*\b",
@@ -217,7 +178,7 @@ def _compile(terms: list[str], inflected: bool = False) -> re.Pattern | None:
     return re.compile(r"\b(?:" + "|".join(map(re.escape, terms)) + r")" + end, flags=re.IGNORECASE)
 
 
-MEAT_PATTERNS = {   # langue → type de viande → motif
+MEAT_PATTERNS = {  
     lang: {meat: _compile(terms, lang in INFLECTED_LANGS) for meat, terms in types.items() if terms}
     for lang, types in MEAT_KEYWORDS.items()
 }
@@ -233,7 +194,7 @@ def _ad_langs(lang: str) -> list[str]:
 
 
 def detect_meats(text: str, advertiser: str = "", lang: str = "") -> list[str]:
-    """Types de viande présents (boeuf, agneau, volaille, porc, veau)."""
+    """Types de viande présents (boeuf, agneau)."""
     combined = f"{advertiser or ''} {text or ''}"
     found = {meat for l in _ad_langs(lang) for meat, rx in MEAT_PATTERNS.get(l, {}).items()
              if rx.search(combined)}
@@ -241,7 +202,7 @@ def detect_meats(text: str, advertiser: str = "", lang: str = "") -> list[str]:
 
 
 # -----------------------------------------------------------------------------
-# 4. FONCTIONS (mêmes noms et signatures qu'avant)
+# 4. FONCTIONS
 # -----------------------------------------------------------------------------
 
 
@@ -312,7 +273,6 @@ def is_valid_clean_ad(ad: dict) -> bool:
 
     if len(text) < 20 or not advertiser:
         return False
-    # Point 3 : animaux de compagnie dans la langue de la publicité (+ anglais)
     for l in _ad_langs(lang):
         rx = PET_PATTERNS.get(l)
         if rx is not None and rx.search(combined):
@@ -327,15 +287,9 @@ def is_valid_clean_ad(ad: dict) -> bool:
 
 
 def detect_meat_type(text: str, advertiser: str = "", keyword: str = "", lang: str = "") -> str:
-    """Point 2 : le mot-clé de recherche est IGNORÉ (argument conservé pour compatibilité).
-    Renvoie red_meat, white_meat, both ou general_meat_bbq."""
     cats = {MEAT_CATEGORY[m] for m in detect_meats(text, advertiser, lang)}
-    if cats == {"red", "white"}:
-        return "both"
     if cats == {"red"}:
         return "red_meat"
-    if cats == {"white"}:
-        return "white_meat"
     return "general_meat_bbq"
 
 
@@ -363,19 +317,13 @@ def save_clean_output(clean_ads: list[dict], clean_file: Path):
         lambda r: detect_meat_type(r.get("ad_text", ""), r.get("advertiser", ""), lang=r.get("lang", "")),
         axis=1,
     )
-    df_clean["meat_detail"] = df_clean.apply(   # bœuf, agneau, volaille, porc, veau
+    df_clean["meat_detail"] = df_clean.apply(   
         lambda r: ",".join(detect_meats(r.get("ad_text", ""), r.get("advertiser", ""), r.get("lang", ""))),
         axis=1,
     )
     df_clean["n_variants"] = df_clean.groupby(["advertiser", "ad_text"])["ad_id"].transform("count")
     df_clean = df_clean[cols]
     df_clean.to_csv(clean_file, index=False, encoding="utf-8-sig")
-
-
-# =============================================================================
-# Collecte : fonction scrape_meta_ads ci-dessous.
-# =============================================================================
-
 
 # -----------------------------------------------------------------------------
 # 5. COLLECTE
@@ -458,7 +406,7 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_inde
     clean_ads: list[dict] = []
     seen_ids: set[str] = set()
 
-    # Reprise : on repart des publicités déjà enregistrées
+    # On repart des publicités déjà enregistrées
     if clean_file.exists():
         try:
             existing = pd.read_csv(clean_file, dtype={"ad_id": str}, encoding="utf-8-sig")
@@ -473,7 +421,7 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_inde
     requetes_vides = 0
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)          # navigateur standard, sans déguisement
+            browser = p.chromium.launch(headless=True)       
             context = browser.new_context(locale="fr-FR", viewport={"width": 1440, "height": 900})
             page = context.new_page()
 
@@ -539,7 +487,7 @@ def scrape_meta_ads(max_scrolls: int = 8, checkpoint_every: int = 10, start_inde
 
             browser.close()
     finally:
-        # Sauvegarde finale, y compris en cas d'interruption (Ctrl+C, erreur)
+        # Sauvegarde finale, y compris en cas d'interruption
         save_clean_output(clean_ads, clean_file)
         print(f"\nCollecte terminée : {len(clean_ads)} publicités enregistrées dans {clean_file}")
 

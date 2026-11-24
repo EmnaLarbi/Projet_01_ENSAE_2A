@@ -1,60 +1,30 @@
+import shutil
 from pathlib import Path
 import pandas as pd
 
-REG_COLS = ["reg_testosterone", "reg_identite_masculine", "reg_ancestral_alpha"]
+base_dir = Path(__file__).resolve().parent.parent if "__file__" in globals() else Path(".")
+processed_dir = base_dir / "Data" / "processed"
 
+clean_file = processed_dir / "meta_ads_meat_bbq_clean.csv"
+backup_file = processed_dir / "meta_ads_meat_bbq_clean_avant_filtre.csv"
 
-def load_positives(csv_path: Path, corpus_label: str) -> pd.DataFrame:
-    """Extrait les créations uniques positives d'un fichier annoté et ajoute les registres détectés."""
-    if not csv_path.exists():
-        print(f"[Info] Fichier absent : {csv_path}")
-        return pd.DataFrame()
+# 1. Copie de sauvegarde
+shutil.copy2(clean_file, backup_file)
 
-    df = pd.read_csv(csv_path, dtype=str).fillna("")
-    pos = df[df["has_virility"].str.lower() == "true"].copy()
-    pos["corpus"] = corpus_label
+df = pd.read_csv(clean_file, dtype={"ad_id": str}, encoding="utf-8-sig")
+print("Avant filtrage :", len(df), "lignes")
+print(df["meat_type"].value_counts(dropna=False))
 
-    def get_registers(row: pd.Series) -> str:
-        active = [
-            col.replace("reg_", "")
-            for col in REG_COLS
-            if row.get(col, "").strip().lower() == "true"
-        ]
-        return ", ".join(active)
+# 2. Garder uniquement 'red_meat' (ou remplace par ['red_meat', 'general_meat_bbq'] si tu veux garder le BBQ générique)
+keep_types = ["red_meat"]
+df_filtered = df[df["meat_type"].isin(keep_types)].copy()
 
-    pos["registers"] = pos.apply(get_registers, axis=1)
-    pos["audit_status"] = ""  # À remplir à la main : ex. "ok", "faux_positif", "hors_sujet"
-    pos["audit_note"] = ""    # Commentaire libre lors de la vérification
+# 3. Recalculer n_variants sur les annonces conservées
+df_filtered["n_variants"] = (
+    df_filtered.groupby(["advertiser", "ad_text"])["ad_id"]
+    .transform("count")
+    .astype(int)
+)
 
-    preferred_cols = [
-        "corpus",
-        "countries",
-        "langs",
-        "advertiser",
-        "registers",
-        "audit_status",
-        "audit_note",
-        "ad_text",
-    ]
-    remaining_cols = [c for c in pos.columns if c not in preferred_cols]
-    return pos[preferred_cols + remaining_cols]
-
-
-def main() -> None:
-    out_dir = Path("Results")
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    main_pos = load_positives(out_dir / "main_global_unique_annotated.csv", "viande_bbq")
-    ctrl_pos = load_positives(out_dir / "control_global_unique_annotated.csv", "groupe_temoin")
-
-    print(f"Annonces positives (viande_bbq) : {len(main_pos)}")
-    print(f"Annonces positives (groupe_temoin) : {len(ctrl_pos)}")
-
-    combined = pd.concat([main_pos, ctrl_pos], ignore_index=True)
-    out_file = out_dir / "audit_positive_ads.csv"
-    combined.to_csv(out_file, index=False, encoding="utf-8-sig")
-    print(f"\nCSV de vérification créé : {out_file} ({len(combined)} lignes)")
-
-
-if __name__ == "__main__":
-    main()
+df_filtered.to_csv(clean_file, index=False, encoding="utf-8-sig")
+print("\nAprès filtrage :", len(df_filtered), "lignes sauvegardées dans", clean_file)
