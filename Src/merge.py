@@ -9,18 +9,28 @@ print("Racine du projet :", RACINE)
 
 CHEMIN_ESS = PROC / "ess11_agrege_pays.csv"
 CHEMIN_ISSP = PROC / "issp_par_pays.csv"
-CHEMIN_GDP = RACINE / "Data" / "raw" / "gdp_world_countries_percapita.csv"
+# PIB par habitant en PPA (dollars internationaux constants de 2021), produit par Src/data_upload.py
+# à partir de l'API de la Banque mondiale. Format long : iso3, pays, annee, pib_hab_ppa.
+CHEMIN_GDP = RACINE / "Data" / "raw" / "pib_hab_ppa_banque_mondiale.csv"
 CHEMIN_SORTIE = PROC / "table_jointe.csv"
 
-ANNEE_PIB = "2022"  # Année cible pour le PIB par habitant
-SKIPROWS_GDP = 4 # Ajuster si le CSV de la Banque mondiale contient des lignes d'en-tête
+ANNEE_PIB = 2022  # Année cible pour le PIB par habitant
+
+
+def charger_pib() -> pd.DataFrame:
+  """Charge le PIB par habitant en PPA ; le télécharge par l'API (Src/data_upload.py) s'il est absent."""
+  if not CHEMIN_GDP.exists():
+    print(f"{CHEMIN_GDP.name} absent : téléchargement par l'API de la Banque mondiale.")
+    import data_upload  # Src/data_upload.py, dans le même dossier que ce script
+    data_upload.main()
+  return pd.read_csv(CHEMIN_GDP)
 
 
 def charger_et_preparer_donnees() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
   """Charge les tables ESS, ISSP et PIB et homogénéise les clés pays (iso2)."""
   ess = pd.read_csv(CHEMIN_ESS).rename(columns={"code_pays": "iso2"})
   issp = pd.read_csv(CHEMIN_ISSP).rename(columns={"country_iso2": "iso2"})
-  gdp = pd.read_csv(CHEMIN_GDP, skiprows=SKIPROWS_GDP)
+  gdp = charger_pib()
   return ess, issp, gdp
 
 
@@ -41,9 +51,9 @@ def fusionner_donnees(
   # 2. Ajout du code ISO3, clé de la table PIB
   df["iso3"] = coco.convert(df["iso2"], src="ISO2", to="ISO3")
 
-  # 3. Préparation et jointure du PIB par habitant (Banque Mondiale)
-  gdp_subset = gdp[["Country Code", ANNEE_PIB]].rename(
-      columns={"Country Code": "iso3", ANNEE_PIB: "pib_hab"}
+  # 3. Préparation et jointure du PIB par habitant en PPA (Banque Mondiale), année ANNEE_PIB
+  gdp_subset = gdp.loc[gdp["annee"] == ANNEE_PIB, ["iso3", "pib_hab_ppa"]].rename(
+      columns={"pib_hab_ppa": "pib_hab"}
   )
   df = df.merge(gdp_subset, on="iso3", how="left", validate="one_to_one")
 
