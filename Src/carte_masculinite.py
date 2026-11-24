@@ -76,11 +76,19 @@ def charger_table(chemin: Path = TABLE_PATH) -> pd.DataFrame:
 
     if "iso2" not in df.columns:
         raise ErreurDonnees("Colonne `iso2` absente de table_jointe.csv")
+
+    # Masculinité par sexe : moyennes pondérées par anweight (mascfel_*_w), les mêmes que
+    # celles utilisées dans les régressions. import_clean.py ne produit plus les moyennes
+    # non pondérées : on reprend donc les colonnes pondérées sous les noms utilisés ici.
+    if {"mascfel_homme_w", "mascfel_femme_w"} <= set(df.columns):
+        df["mascfel_homme"] = df["mascfel_homme_w"]
+        df["mascfel_femme"] = df["mascfel_femme_w"]
+
     presentes = [c for c in ["mascfel", "mascfel_homme", "mascfel_femme"] if c in df.columns]
     if not presentes:
         raise ErreurDonnees("Aucune colonne mascfel dans table_jointe.csv")
     if "mascfel_homme" not in df.columns:
-        log.warning("mascfel_homme / mascfel_femme absents : relancer clean.py puis la jointure")
+        log.warning("mascfel_homme_w / mascfel_femme_w absents : relancer import_clean.py puis merge.py")
 
     # Codes pays : nettoyage, doublons
     df["iso2"] = df["iso2"].astype(str).str.strip().str.upper()
@@ -241,8 +249,8 @@ def generer(table: Path = TABLE_PATH, dossier: Path = SORTIES,
     log.info("%s", indicateurs(df))
 
     vues = [(f"{PREFIXE}_{SUFFIXES[c]}", f"{lib} — ESS 11") for c, lib in VUES.items() if c in df.columns]
-    source = ("Source : ESS ERIC, European Social Survey Round 11. Chaque carte a sa propre "
-              "échelle de couleurs. Gris : pays sans donnée.")
+    source = ("Source : ESS ERIC, European Social Survey Round 11. Moyennes par sexe pondérées "
+              "par anweight. Chaque carte a sa propre échelle de couleurs. Gris : pays sans donnée.")
     return exporter_png(fig, vues, dossier, source, gj is not None)
 
 
