@@ -10,45 +10,17 @@ DOSSIER_PROCESSED = RACINE / "Data" / "processed"
 # 1. TRAITEMENT DE L'ESS 11
 # ==========================================
 
-# 1. TRAITEMENT DE L'ESS 11
-# ==========================================
-# Les lignes ajoutées sont marquées « # AJOUT ». Tout le reste est inchangé.
-
 CHEMIN_BRUT_ESS = RACINE / "Data" / "raw" / "ESS11e04_2.csv"
 VARIABLES_ESS = [
     'cntry',
-    'gndr',  # AJOUT : sexe (1 = homme, 2 = femme)
-    'bctprd',
-    'pslplonl',
-    'alcfreq',
+    'gndr', # sexe (1 = homme, 2 = femme)
     'mascfel',
-    'impbemw',
-    'polintr',
-    'wrclmch',
-    'ccrdprs',
-    'ccnthum',
-    'nwspol',
-    'netustm',
-    'impenva',
-    'anweight',  # AJOUT (pondération) : poids d'analyse ESS (= pspwght × pweight)
+    'anweight',  # pondération : poids d'analyse ESS (= pspwght × pweight)
 ]
 
-# AJOUT (pondération) : seules ces variables déterminent la suppression d'une ligne
-VARIABLES_CLES_ESS = ['cntry', 'gndr', 'mascfel', 'anweight']  # AJOUT (pondération)
-
 CODES_SPECIAUX_ESS = {
-    'gndr': [9],  # AJOUT : 9 = sexe non renseigné
-    'bctprd': [7, 8, 9],
-    'pslplonl': [7, 8, 9],
-    'alcfreq': [77, 88, 99],
+    'gndr': [9],  # 9 = sexe non renseigné
     'mascfel': [7, 8, 9],
-    'impbemw': [66, 77, 88, 99],
-    'polintr': [7, 8, 9],
-    'wrclmch': [6, 7, 8, 9],
-    'ccrdprs': [66, 77, 88, 99],
-    'nwspol': [7777, 8888, 9999],
-    'netustm': [7, 8, 9],
-    'impenva': [66, 77, 88, 99],
 }
 
 
@@ -58,71 +30,57 @@ def charger_ess(chemin: str | Path = CHEMIN_BRUT_ESS) -> pd.DataFrame:
 
 
 def nettoyer_ess(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-  """Nettoie l'ESS, gère les codes spéciaux, crée les variables et agrège par pays."""
+  """Nettoie l'ESS, remplace les codes spéciaux, crée les variables et agrège par pays."""
   colonnes_presentes = [col for col in VARIABLES_ESS if col in df.columns]
   df_subset = df[colonnes_presentes].copy()
   lignes_initiales = len(df_subset)
 
-  # Remplacement des codes spécifiques par NaN
   for col, codes in CODES_SPECIAUX_ESS.items():
     if col in df_subset.columns:
       df_subset[col] = df_subset[col].replace(codes, np.nan)
 
-  # Gestion spécifique de ccnthum (climatosceptique)
-  if 'ccnthum' in df.columns:
-    df_subset['climatosceptique'] = np.where(df['ccnthum'] == 55, 1, 0)
-    df_subset.loc[df['ccnthum'].isin([77, 88, 99]), 'climatosceptique'] = np.nan
-    df_subset['ccnthum'] = df_subset['ccnthum'].replace(55, np.nan)
+  df_propre = df_subset.dropna(subset=VARIABLES_ESS).copy()
+  print(f'Nombre de lignes éliminées (ESS) : {lignes_initiales - len(df_propre)}')
+  print(f'Nombre de lignes restantes (ESS) : {len(df_propre)}')
 
-  # Suppression des lignes comportant des NaN
-  # MODIF (pondération) : suppression limitée aux variables clés, avant : df_subset.dropna()
-  df_propre = df_subset.dropna(subset=VARIABLES_CLES_ESS)  # MODIF (pondération)
-  lignes_eliminees = lignes_initiales - len(df_propre)
-  print(f'Nombre de lignes éliminées (ESS) : {lignes_eliminees}')
-  print(f"Nombre de lignes restantes (ESS) : {len(df_propre)}")
+  df_propre['sexe'] = df_propre['gndr'].map({1: 'homme', 2: 'femme'})
 
-  # AJOUT : libellé du sexe dans la table individuelle (ess11_nettoye.csv)
-  df_propre = df_propre.assign(sexe=df_propre['gndr'].map({1: 'homme', 2: 'femme'}))  # AJOUT
-
-  # Vérification des types avant agrégation
-  colonnes_non_numeriques = df_propre.select_dtypes(
-      include=['object']
-  ).columns.tolist()
   colonnes_non_numeriques = [
-      col for col in colonnes_non_numeriques if col not in ('cntry', 'sexe')  # AJOUT : 'sexe' est un libellé
+      col
+      for col in df_propre.select_dtypes(include=['object']).columns
+      if col not in ('cntry', 'sexe')
   ]
   if colonnes_non_numeriques:
     print(f'⚠️ ALERTE ESS : Colonnes non numériques : {colonnes_non_numeriques}')
   else:
     print('✅ TEST RÉUSSI ESS : Toutes les variables à agréger sont numériques.')
 
-  # Agrégation par pays
-  df_agrege = df_propre.groupby('cntry').mean(numeric_only=True).reset_index()
-  df_agrege = df_agrege.drop(columns='gndr')  # AJOUT : la moyenne de gndr n'a pas de sens
-  df_agrege = df_agrege.drop(columns='anweight')  # AJOUT (pondération) : la moyenne des poids n'a pas de sens
+  # Moyennes globales par pays (hors identifiants/poids)
+  cols_moyenne = [
+      c
+      for c in df_propre.select_dtypes(include=[np.number]).columns
+      if c not in ('gndr', 'anweight')
+  ]
+  df_agrege = df_propre.groupby('cntry', as_index=False)[cols_moyenne].mean()
 
-  # AJOUT : mascfel moyen par sexe et effectifs, par pays
-  mascfel_sexe = (  # AJOUT
-      df_propre.groupby(['cntry', 'sexe'])['mascfel']  # AJOUT
-      .agg(['mean', 'size'])  # AJOUT
-      .unstack('sexe')  # AJOUT
-  )  # AJOUT
-  mascfel_sexe.columns = [  # AJOUT
-      f"{'mascfel' if stat == 'mean' else 'n_ess'}_{sexe}"  # AJOUT : mascfel_homme, n_ess_femme…
-      for stat, sexe in mascfel_sexe.columns  # AJOUT
-  ]  # AJOUT
-  df_agrege = df_agrege.merge(mascfel_sexe.reset_index(), on='cntry', how='left')  # AJOUT
+  # Effectifs et scores mascfel pondérés par anweight, par pays et sexe
+  effectifs = (
+      df_propre.groupby(['cntry', 'sexe'])
+      .size()
+      .unstack('sexe', fill_value=0)
+      .rename(columns={'homme': 'n_ess_homme', 'femme': 'n_ess_femme'})
+  )
+  scores_w = (
+      df_propre.groupby(['cntry', 'sexe'])
+      .apply(lambda g: np.average(g['mascfel'], weights=g['anweight']))
+      .unstack('sexe')
+      .rename(columns={'homme': 'mascfel_homme_w', 'femme': 'mascfel_femme_w'})
+  )
 
-  # AJOUT (pondération) : mascfel moyen par pays et par sexe, pondéré par anweight
-  mascfel_sexe_w = (  # AJOUT (pondération)
-      df_propre.groupby(['cntry', 'sexe'])  # AJOUT (pondération)
-      .apply(lambda g: np.average(g['mascfel'], weights=g['anweight']))  # AJOUT (pondération)
-      .unstack('sexe')  # AJOUT (pondération)
-  )  # AJOUT (pondération)
-  mascfel_sexe_w.columns = [f'mascfel_{sexe}_w' for sexe in mascfel_sexe_w.columns]  # AJOUT (pondération) : mascfel_homme_w, mascfel_femme_w
-  df_agrege = df_agrege.merge(mascfel_sexe_w.reset_index(), on='cntry', how='left')  # AJOUT (pondération)
-
-  df_agrege = df_agrege.rename(columns={'cntry': 'code_pays'})
+  stats_sexe = effectifs.join(scores_w).reset_index()
+  df_agrege = df_agrege.merge(stats_sexe, on='cntry', how='left').rename(
+      columns={'cntry': 'code_pays'}
+  )
 
   return df_propre, df_agrege
 
