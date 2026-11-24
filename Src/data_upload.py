@@ -89,9 +89,9 @@ def controler(df: pd.DataFrame) -> None:
     annee = df[df["annee"] == ANNEE_CONTROLE].set_index("iso3")["pib_hab_ppa"]
     manquants = [p for p in PAYS_ANALYSE if p not in annee.index]
     if manquants:
-        print(f"⚠️ Pays de l'analyse sans valeur en {ANNEE_CONTROLE} : {manquants}")
+        print(f" Pays de l'analyse sans valeur en {ANNEE_CONTROLE} : {manquants}")
     else:
-        print(f"✅ Les {len(PAYS_ANALYSE)} pays de l'analyse ont une valeur en {ANNEE_CONTROLE}.")
+        print(f" Les {len(PAYS_ANALYSE)} pays de l'analyse ont une valeur en {ANNEE_CONTROLE}.")
     print(annee.reindex(PAYS_ANALYSE).round(0).to_string())
 
 
