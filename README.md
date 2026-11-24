@@ -101,7 +101,7 @@ sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libatk1.0-0 liba
 Depuis la racine du projet, dans cet ordre :
 
 ```bash
-python Src/data_upload.py
+python Src/data_upload.py      
 python Src/import_clean.py               # → Data/processed/issp_*.csv, ess11_*.csv
 python Src/merge.py            # → Data/processed/table_jointe.csv
 python Src/maps.py                # → sorties/carte_viande_*.png
