@@ -7,7 +7,7 @@ avec
     X : écart de score de masculinité/féminité hommes - femmes (mascfel_h - masfcel_f)
     log(PIB) : logarithme du PIB par habitant (variable de contrôle)
 
-Données : ISSP 2020 et ESS 11, nettoyées et jointes au niveau pays (une ligne = un pays).
+Données : ISSP 2020 et ESS 11, nettoyées et jointes au niveau pays.
 """
 from pathlib import Path
 import matplotlib.pyplot as plt
@@ -19,8 +19,6 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # ======================================================================
 # 0. PARAMÈTRES
-# Tous les noms de colonnes et chemins sont centralisés ici : c'est le seul
-# bloc à modifier si la table change.
 # ======================================================================
 
 def trouver_racine_projet() -> Path:
