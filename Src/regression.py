@@ -167,39 +167,7 @@ matrice_corr.to_latex(DOSSIER_SORTIES / "correlations.tex")
 
 
 # ======================================================================
-# 4. VISUALISATION
-# ======================================================================
-
-def tracer_nuage(df: pd.DataFrame, col_pays: str, chemin_sortie: Path) -> None:
-    """Nuage de points X vs Y, étiqueté par pays, avec droite des MCO simples."""
-    fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(df[X], df[Y], color="tab:blue", alpha=0.8)
-
-    for _, ligne in df.iterrows():
-        ax.annotate(str(ligne[col_pays]), (ligne[X], ligne[Y]),
-                    xytext=(4, 4), textcoords="offset points", fontsize=8)
-
-    pente, ordonnee = np.polyfit(df[X], df[Y], deg=1)
-    grille = np.linspace(df[X].min(), df[X].max(), 100)
-    ax.plot(grille, ordonnee + pente * grille, color="tab:red",
-            label=f"Droite MCO (pente = {pente:.2f})")
-
-    ax.axhline(0, color="grey", lw=0.5, ls="--")
-    ax.axvline(0, color="grey", lw=0.5, ls="--")
-    ax.set_xlabel("Écart de score de masculinité/féminité (hommes − femmes)")   # préciser l'unité du score
-    ax.set_ylabel("Écart de consommation de viande (hommes − femmes)")          # préciser l'unité de conso
-    ax.set_title("Écart de consommation de viande et écart de masculinité, par pays")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(chemin_sortie, dpi=300)
-    plt.show()
-
-
-tracer_nuage(df, COLONNES["pays"], DOSSIER_SORTIES / "nuage_ecarts.png")
-
-
-# ======================================================================
-# 5. RÉGRESSIONS
+# 4. RÉGRESSIONS
 # Écarts-types robustes à l'hétéroscédasticité HC3, recommandés pour les
 # petits échantillons (ici quelques dizaines de pays).
 # ======================================================================
@@ -208,6 +176,46 @@ modele_1 = smf.ols(f"{Y} ~ {X}", data=df).fit(cov_type="HC3")
 modele_2 = smf.ols(f"{Y} ~ {X} + {CONTROLE}", data=df).fit(cov_type="HC3")
 
 print(modele_2.summary())
+
+
+# ======================================================================
+# 5. NUAGE DE POINTS ET DROITE DU MODÈLE (1)
+# ======================================================================
+
+def tracer_nuage(modele, df: pd.DataFrame, col_pays: str, chemin_sortie: Path) -> None:
+    """Nuage de points X vs Y, étiqueté par pays, avec la droite estimée par `modele`
+    (régression simple de Y sur X) et sa bande de confiance à 95 %.
+
+    La droite et la bande viennent de `modele.get_prediction` : elles utilisent donc
+    les mêmes erreurs-types (HC3) que le tableau de résultats.
+    """
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(df[X], df[Y], color="tab:blue", alpha=0.8, zorder=3)
+
+    for _, ligne in df.iterrows():
+        ax.annotate(str(ligne[col_pays]), (ligne[X], ligne[Y]),
+                    xytext=(4, 4), textcoords="offset points", fontsize=8)
+
+    grille = pd.DataFrame({X: np.linspace(df[X].min(), df[X].max(), 100)})
+    prediction = modele.get_prediction(grille).summary_frame(alpha=0.05)
+
+    beta, erreur_type = modele.params[X], modele.bse[X]
+    ax.plot(grille[X], prediction["mean"], color="tab:red",
+            label=f"Modèle (1) : pente = {beta:.3f} (e.-t. HC3 {erreur_type:.3f}), R² = {modele.rsquared:.2f}")
+    ax.fill_between(grille[X], prediction["mean_ci_lower"], prediction["mean_ci_upper"],
+                    color="tab:red", alpha=0.15, label="Intervalle de confiance à 95 %")
+
+    ax.axhline(0, color="grey", lw=0.5, ls="--")
+    ax.set_xlabel("Écart de masculinité ressentie, hommes − femmes (points, échelle 0-6)")
+    ax.set_ylabel("Écart de consommation de bœuf ou d'agneau,\nhommes − femmes (jours par semaine)")
+    ax.set_title("Écart de consommation de viande et écart de masculinité, par pays")
+    ax.legend(loc="lower left", fontsize=8)
+    fig.tight_layout()
+    fig.savefig(chemin_sortie, dpi=300)
+    plt.show()
+
+
+tracer_nuage(modele_1, df, COLONNES["pays"], DOSSIER_SORTIES / "nuage_ecarts.png")
 
 
 # ======================================================================
