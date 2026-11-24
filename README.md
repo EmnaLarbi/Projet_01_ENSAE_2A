@@ -41,14 +41,15 @@ Projet_01_ENSAE_2A/
 │   ├── raw/            données brutes 
 │   └── processed/      données nettoyées, agrégées et jointes
 ├── Src/
-│   ├── import.clean.py              nettoyage ISSP et ESS, agrégation par pays et par sexe
-│   ├── merge.py           jointure ISSP × ESS × PIB → table_jointe.csv
+    ├── data_upload.py        récupération du PIB par API
+│   ├── import.clean.py       nettoyage ISSP et ESS, agrégation par pays et par sexe
+│   ├── merge.py              jointure ISSP × ESS × PIB → table_jointe.csv
 │   ├── maps.py               cartes ISSP (consommation par sexe, écart H − F)
 │   ├── carte_masculinite.py  cartes ESS (masculinité ressentie)
 │   ├── regression.py         statistiques descriptives, corrélations, régressions 
 │   └── lister_paquets.py     liste des paquets utilisés et de leurs versions
-├── sorties/            tableaux (.tex) et figures (.png) appelés par le notebook
-├── notebook.ipynb             notebook de présentation des résultats
+├── sorties/                  tableaux (.tex) et figures (.png) appelés par le notebook
+├── notebook.ipynb            notebook de présentation des résultats
 ├── requirements.txt
 └── README.md
 ```
@@ -100,6 +101,7 @@ sudo apt-get update && sudo apt-get install -y libnss3 libnspr4 libatk1.0-0 liba
 Depuis la racine du projet, dans cet ordre :
 
 ```bash
+python Src/data_upload.py
 python Src/import_clean.py               # → Data/processed/issp_*.csv, ess11_*.csv
 python Src/merge.py            # → Data/processed/table_jointe.csv
 python Src/maps.py                # → sorties/carte_viande_*.png
